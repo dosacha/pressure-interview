@@ -1,0 +1,66 @@
+[
+  {
+    "id": "redis-identity",
+    "topic": "Redis",
+    "panel": [
+      { "id": "p1", "role": "dba", "temperament": "shaker" },
+      { "id": "p2", "role": "textbook", "temperament": "persistent" },
+      { "id": "p3", "role": "scenario", "temperament": "helper" }
+    ],
+    "first": { "interviewerId": "p1", "targetAxis": "identity_swap" },
+    "answers": [
+      {
+        "kind": "good",
+        "text": "PostgreSQL이 메모리에서만 돈다면 디스크 I/O에서 오던 지연 차이는 많이 줄어들 것 같습니다. 그래도 차이는 남는다고 봅니다. 먼저 데이터 모델이 다릅니다. Redis는 키 하나에 문자열, 리스트, 해시 같은 자료형을 붙여서 명령으로 직접 다루고, PostgreSQL은 테이블과 SQL로 관계형 데이터를 다룹니다. 명령 처리 방식도 다릅니다. Redis는 명령을 한 스레드에서 하나씩 순서대로 실행하니까 명령 하나하나가 원자적이고, PostgreSQL은 연결마다 따로 처리하면서 쿼리마다 실행 계획을 세웁니다. 트랜잭션 보장도 남는 차이입니다. PostgreSQL은 격리 수준을 고를 수 있고 실패하면 롤백되지만, Redis의 MULTI/EXEC는 명령을 묶어서 차례로 실행할 뿐이고 중간에 하나가 실패해도 앞의 명령을 되돌리지 않습니다. 그래서 저장 매체가 같아져도 단순한 키 조회는 Redis가, 복잡한 질의나 강한 트랜잭션이 필요한 곳은 PostgreSQL이 맞다고 생각합니다."
+      },
+      {
+        "kind": "vague",
+        "text": "둘 다 메모리에서 돌면 속도는 거의 비슷해질 것 같습니다. 그러면 PostgreSQL이 기능이 더 많으니까, 굳이 Redis를 따로 둘 이유가 별로 없지 않을까 싶습니다."
+      },
+      {
+        "kind": "wrong",
+        "text": "그래도 Redis가 확실히 더 빠릅니다. Redis는 들어온 명령을 여러 스레드가 동시에 나눠서 실행하기 때문에 처리량이 훨씬 높습니다. PostgreSQL이 메모리에 올라가더라도 이 병렬 실행 구조의 차이는 그대로 남기 때문에, 속도에서는 Redis를 따라올 수 없다고 생각합니다."
+      }
+    ]
+  },
+  {
+    "id": "redis-queue",
+    "topic": "Redis",
+    "panel": [
+      { "id": "p1", "role": "architect", "temperament": "persistent" },
+      { "id": "p2", "role": "dba", "temperament": "helper" },
+      { "id": "p3", "role": "scenario", "temperament": "shaker" }
+    ],
+    "first": { "interviewerId": "p1", "targetAxis": "tech_swap" },
+    "answers": [
+      {
+        "kind": "good",
+        "text": "Redis로 작업 대기열을 만든다면 List를 쓰겠습니다. 생산자는 LPUSH로 작업을 넣고, 소비자는 BRPOP으로 꺼냅니다. BRPOP은 List가 비어 있으면 작업이 들어올 때까지 블로킹으로 기다리니까, 소비자가 계속 폴링하지 않아도 됩니다. 다만 한계가 분명합니다. BRPOP으로 꺼내는 순간 작업이 List에서 지워지기 때문에, 소비자가 처리하다가 죽으면 그 작업은 그대로 유실됩니다. 그리고 Redis는 데이터를 메모리에 두니까, 영속성 설정에 따라서는 장애가 났을 때 아직 디스크에 기록되지 않은 작업이 날아갈 수 있습니다. 실패한 작업을 다시 넣는 재처리도 Redis가 해 주지 않아서 애플리케이션이 직접 다시 넣어야 하고, 몇 번 실패했는지 세는 것도 따로 만들어야 합니다."
+      },
+      {
+        "kind": "vague",
+        "text": "Redis로 큐를 만들면 메모리에서 돌아가니까 빠르고, 쓰기도 편해서 대기열로 쓰기 좋다고 생각합니다."
+      }
+    ]
+  },
+  {
+    "id": "node-premise",
+    "topic": "NodeJS",
+    "panel": [
+      { "id": "p1", "role": "textbook", "temperament": "shaker" },
+      { "id": "p2", "role": "scenario", "temperament": "persistent" },
+      { "id": "p3", "role": "security", "temperament": "helper" }
+    ],
+    "first": { "interviewerId": "p1", "targetAxis": "cs_premise" },
+    "answers": [
+      {
+        "kind": "good",
+        "text": "이벤트 루프가 유리한 건 요청 처리 시간의 대부분이 네트워크나 디스크 I/O를 기다리는 데 쓰이고, 그 기다림을 운영체제에 맡겨 둔 채 스레드 하나가 다른 요청의 콜백을 계속 돌릴 수 있기 때문입니다. 그런데 메모리 접근 비용이 커지면 기다리는 시간이 I/O가 아니라 CPU가 메모리를 읽고 쓰는 데서 생깁니다. 이 대기는 비동기로 넘길 수가 없어서, 그동안 이벤트 루프 스레드가 그대로 붙잡혀 있게 됩니다. 그러면 콜백 하나하나가 길어지고 그 뒤에 쌓인 요청이 전부 밀립니다. I/O 대기를 겹쳐서 숨기는 장점은 남지만, 스레드 하나로 많은 요청을 빠르게 돌려 주던 장점은 상당 부분 사라진다고 봅니다."
+      },
+      {
+        "kind": "wrong",
+        "text": "이벤트 루프는 요청이 들어올 때마다 스레드를 새로 만들어서 그 요청을 처리합니다. 그래서 요청마다 각자 따로 돌아가기 때문에, 메모리 접근이 느려지더라도 한 요청이 다른 요청을 막는 일은 없다고 확실하게 말씀드릴 수 있습니다."
+      }
+    ]
+  }
+]
