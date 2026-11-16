@@ -1,10 +1,10 @@
 import {
   AXES,
+  DEFECT_NAMES,
   QUESTION_INTENTS,
   REACTION_INTENTS,
   ROLES,
   TEMPERAMENTS,
-  type DefectType,
 } from '../catalog';
 import type { JsonLlm } from '../llm/llm.service';
 import type { Question, QuestionInput, TokenUsage } from '../types';
@@ -82,17 +82,6 @@ export const QUESTION_SCHEMA = {
     },
     answerKey: ANSWER_KEY_SCHEMA,
   },
-};
-
-// 설계 6.2의 3단계 결함 유형 이름
-const DEFECT_NAMES: Record<DefectType, string> = {
-  none: '결함 없음(강한 답)',
-  wrong: '오답 의심',
-  missing_axis: '축 누락',
-  no_why: 'why 없음',
-  no_tradeoff: '트레이드오프 누락',
-  vague: '모호함',
-  no_evidence: '근거 없음',
 };
 
 // 조사 노트 (a) 표의 한 줄 정의. A6은 설계 5.2에 따라 답변 속 주장으로 좁혔다.

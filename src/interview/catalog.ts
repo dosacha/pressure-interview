@@ -90,6 +90,17 @@ export const DEFECT_TYPES = [
 ] as const;
 export type DefectType = (typeof DEFECT_TYPES)[number];
 
+// 설계 6.2의 3단계 결함 유형 이름
+export const DEFECT_NAMES: Record<DefectType, string> = {
+  none: '결함 없음(강한 답)',
+  wrong: '오답 의심',
+  missing_axis: '축 누락',
+  no_why: 'why 없음',
+  no_tradeoff: '트레이드오프 누락',
+  vague: '모호함',
+  no_evidence: '근거 없음',
+};
+
 export const DEFECT_PRIORITY: Record<DefectType, number> = {
   wrong: 4,
   missing_axis: 3,
