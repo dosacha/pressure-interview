@@ -1,11 +1,12 @@
-import type { CallRole, EngineConfig } from '../../src/config/engine.config';
+import { CALL_ROLES, type EngineConfig } from '../../src/config/engine.config';
 import {
-  AXES,
+  axisName,
   DEFECT_NAMES,
   QUESTION_INTENTS,
   REACTION_INTENTS,
   ROLES,
   TEMPERAMENTS,
+  type AxisId,
 } from '../../src/interview/catalog';
 import type {
   Analysis,
@@ -22,6 +23,7 @@ export interface R1Step {
   prepared: PreparedQuestion;
   lateVerification: Verification | null;
   askedBy?: string;
+  targetAxis?: AxisId | null;
 }
 export interface R1FollowUp {
   answerKind: string;
@@ -38,6 +40,7 @@ export interface R1Result {
   followUps: R1FollowUp[];
   usage: TokenUsage[];
   error: string | null;
+  answerCount?: number;
 }
 
 export function sumUsage(usages: TokenUsage[]): TokenUsage {
@@ -50,7 +53,6 @@ export function sumUsage(usages: TokenUsage[]): TokenUsage {
   );
 }
 
-const CALL_ROLES: CallRole[] = ['question', 'leak', 'verify', 'analyze'];
 const CHECKLIST = [
   '- [ ] 예상 밖인가',
   '- [ ] 정답지가 정확한가',
@@ -58,7 +60,6 @@ const CHECKLIST = [
   '- [ ] 의도가 질문에 드러나지 않았나',
 ];
 
-const axisName = (id: string) => AXES.find((a) => a.id === id)?.name ?? id;
 const list = (items: string[]) => (items.length > 0 ? items.join(', ') : '(없음)');
 const quote = (text: string) => `> ${text.split('\n').join('\n> ')}`;
 // 목록 항목 안의 인용 블록. 모델이 만든 문장에 줄바꿈이 있어도 목록이 끊기지 않는다.
@@ -109,6 +110,16 @@ function renderStep(
     ? '없음(가정을 바꾸지 않는 질문)'
     : `${axisName(question.assumption.axis)} — ${question.assumption.statement}`;
   const lastNaming = attempts[attempts.length - 1]?.naming;
+  const target = step.targetAxis;
+  const targetLine = target
+    ? [
+        `- 지정한 축: ${axisName(target)}${
+          target === question.assumption.axis
+            ? ''
+            : ` — 모델이 적은 축과 다르다(실제: ${noAssumption ? '없음(none), 사전 검증을 건너뜀' : axisName(question.assumption.axis)})`
+        }`,
+      ]
+    : [];
 
   const lines = [
     step.askedBy ? `${heading} — ${memberName(panel, step.askedBy)}` : heading,
@@ -117,7 +128,8 @@ function renderStep(
     '',
     `- 숨은 질문 의도: ${question.questionIntent} ${QUESTION_INTENTS[question.questionIntent]}`,
     `- 바뀐 가정: ${assumption}`,
-    `- flags: leak(흘림이 끝까지 남음) ${flags.leak}, premise(사전 검증에서 전제 오류가 끝까지 남음) ${flags.premise}`,
+    ...targetLine,
+    `- flags: leak(흘림이 끝까지 남음) ${flags.leak}, premise(사전 검증에서 전제 오류가 끝까지 남음) ${noAssumption ? '해당 없음(가정 없는 질문은 사전 검증을 하지 않는다)' : flags.premise}`,
     ...(lastNaming && !lastNaming.ok
       ? [`- 최종 질문에 남은 이름 위반: ${list(lastNaming.violations)}`]
       : []),
@@ -159,11 +171,29 @@ function renderStep(
     `- 첫 시도의 위반: ${list(attempts[0]?.naming.violations ?? [])}`,
     `- 재생성: ${discarded.length}회`,
   );
+  attempts.forEach((a, i) => {
+    if (!a.techs) return;
+    lines.push(
+      `- 시도 ${i + 1} 검출된 기술: ${a.techs.length > 0 ? a.techs.map((t) => `${t.name}(${t.role})`).join(', ') : '없음'}`,
+    );
+    const premises = a.techs.filter((t) => t.role === 'premise').map((t) => t.name);
+    if (a.question.assumption.axis === 'none' && premises.length > 0) {
+      lines.push(
+        `- 시도 ${i + 1}: 가정 없는 질문이라 premise를 solution으로 보고 검사했다: ${premises.join(', ')}`,
+      );
+    }
+  });
   discarded.forEach((a, i) => {
     const reason = !a.naming.ok
       ? `이름 위반(${a.naming.violations.join(', ')})`
       : `전제 오류(${(a.verification?.problems ?? []).map((p) => p.problem).join(' / ')})`;
-    lines.push(inline(`- 버려진 시도 ${i + 1} — 버린 이유:`, reason), nestedQuote(a.question.text));
+    // 빈 줄과 이름표로 두 인용을 떼어 놓는다. 붙어 있으면 이유와 질문이 한 인용으로 합쳐진다.
+    lines.push(
+      inline(`- 버려진 시도 ${i + 1} — 버린 이유:`, reason),
+      '',
+      '  버려진 질문 문장:',
+      nestedQuote(a.question.text),
+    );
   });
 
   lines.push('', '**검토**', '', ...CHECKLIST, '');
@@ -246,7 +276,7 @@ export function renderReport(run: {
   lines.push(
     `| 전체 | ${total.input_tokens} | ${total.output_tokens} |`,
     '',
-    '사용량은 응답을 만든 시도만 센 것이다. 폴백으로 거절된 시도의 토큰은 빠져 있다.',
+    '사용량은 응답을 만든 시도만 센 것이다. 폴백으로 거절된 시도의 토큰은 빠져 있다. 오류로 끝난 턴의 사용량도 빠져 있다. 그 턴에서 이미 끝난 호출과 실패한 호출의 토큰이 모두 합계에 들지 않는다.',
     '',
   );
 
@@ -268,7 +298,12 @@ export function renderReport(run: {
     }
     r.followUps.forEach((f, i) => lines.push(...renderFollowUp(r.panel, f, i + 1, failed)));
     if (failed && r.first) {
-      lines.push(`시나리오가 여기서 멈췄다: 기록된 후속 ${r.followUps.length}개.`, '');
+      lines.push(
+        r.answerCount === undefined
+          ? `시나리오가 여기서 멈췄다: 기록된 후속 ${r.followUps.length}개.`
+          : `시나리오가 여기서 멈췄다: 답 ${r.answerCount}개 중 ${r.followUps.length}개까지 기록.`,
+        '',
+      );
     }
   }
   return lines.join('\n');

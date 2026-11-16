@@ -98,6 +98,8 @@ describe('runScenarios', () => {
     expect(r.followUps).toHaveLength(1);
     expect(r.error).toBe('boom');
     expect(r.usage.length).toBeGreaterThan(0);
+    // 첫 질문 1 + 답 1의 분석 1 + 후속 질문 1. 실패한 답 2의 분석은 사용량이 없다.
+    expect(r.usage).toHaveLength(3);
   });
 
   it('후속 질문 생성이 실패해도 그 답의 analysis와 pick은 남는다', async () => {
@@ -167,6 +169,53 @@ describe('runScenarios', () => {
     expect(r.followUps[0].next).toBeNull();
     expect(f.prepareQuestion).toHaveBeenCalledTimes(1);
   });
+
+  it('거절의 category가 null이면 카테고리 없음으로 적는다', async () => {
+    const f = fakes();
+    f.prepareQuestion.mockRejectedValueOnce(new RefusalError(null));
+    const [r] = await runScenarios(f.deps, [scenario('a', ['x'])]);
+    expect(r.error).toBe('refusal: 카테고리 없음');
+  });
+
+  it('지정한 축을 step에 남기고, 전체 답 수를 결과에 남긴다', async () => {
+    const f = fakes();
+    f.prepareQuestion.mockResolvedValue(prepared('identity_swap', 'Q'));
+    f.handleAnswer.mockResolvedValue(answered(pick));
+    const [r] = await runScenarios(f.deps, [scenario('a', ['x', 'y'])]);
+    expect(r.first?.targetAxis).toBe('identity_swap');
+    expect(r.followUps[0].next?.targetAxis).toBeNull();
+    expect(r.answerCount).toBe(2);
+  });
+
+  it('사후 검증이 정답지를 고치면 그 뒤의 handleAnswer는 고친 정답지를 받는다', async () => {
+    const f = fakes();
+    const fixed = { vanishing: [], remaining: [], alternatives: [], keyPoints: ['고침'] };
+    const corrected: Verification = {
+      premiseOk: true,
+      problems: [{ field: 'keyPoints', problem: '틀림' }],
+      answerKey: fixed,
+    };
+    f.deps.llm = {
+      callJson<T>() {
+        const data: unknown = corrected;
+        return Promise.resolve({
+          data: data as T,
+          usage: { input_tokens: 5, output_tokens: 5 },
+          model: 'm',
+        });
+      },
+    };
+    const first = prepared('none', '기본 질문');
+    f.prepareQuestion.mockResolvedValue(first);
+    f.handleAnswer.mockResolvedValue(answered(null));
+    const [r] = await runScenarios(f.deps, [scenario('a', ['x', 'y'])]);
+    for (const [call] of f.handleAnswer.mock.calls) {
+      expect(call.question.answerKey).toEqual(fixed);
+      expect(call.question.text).toBe('기본 질문');
+    }
+    expect(f.handleAnswer).toHaveBeenCalledTimes(2);
+    expect(r.first?.prepared.question.answerKey.keyPoints).toEqual(['k']);
+  });
 });
 
 describe('scenarios.json', () => {
@@ -190,6 +239,12 @@ describe('scenarios.json', () => {
     },
   };
 
+  const topics: Record<string, string> = {
+    'redis-identity': 'Redis',
+    'redis-queue': 'Redis',
+    'node-premise': 'NodeJS',
+  };
+
   it('표와 맞는다', () => {
     expect(scenarios.map((s) => s.id)).toEqual(Object.keys(expected));
     for (const s of scenarios) {
@@ -204,6 +259,7 @@ describe('scenarios.json', () => {
       expect(AXES.map((a) => a.id)).toContain(s.first.targetAxis);
       expect(`${asker?.role}/${s.first.targetAxis}`).toBe(expected[s.id].first);
       expect(s.answers.map((a) => a.kind)).toEqual(expected[s.id].answers);
+      expect(s.topic).toBe(topics[s.id]);
       for (const a of s.answers) expect(a.text.length).toBeGreaterThan(0);
     }
   });

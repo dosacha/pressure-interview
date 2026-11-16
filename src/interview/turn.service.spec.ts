@@ -111,6 +111,61 @@ describe('TurnService.prepareQuestion', () => {
     expect(calls[3].user).toContain('전제 오류');
     expect(r.flags.premise).toBe(true);
   });
+  it('가정 없는 질문에서 premise로 붙은, 지원자가 말하지 않은 기술은 위반이라 다시 만든다', async () => {
+    const { turn, calls } = await service({
+      question: [q('none', 'Kafka와 비교하면요?'), q('none', '다른 대안은요?')],
+      leak: [{ techs: [{ name: 'Kafka', role: 'premise' }] }, { techs: [] }],
+    });
+    const r = await turn.prepareQuestion(base);
+    expect(r.attempts[0].naming).toEqual({ ok: false, violations: ['Kafka'] });
+    expect(calls[2].user).toContain('Kafka');
+    expect(r.question.text).toBe('다른 대안은요?');
+  });
+  it('가정이 있는 질문에서는 premise가 그대로 허용된다', async () => {
+    const { turn } = await service({
+      question: [q('identity_swap', '인메모리 PostgreSQL이라면요?')],
+      leak: [{ techs: [{ name: 'PostgreSQL', role: 'premise' }] }],
+      verify: [{ premiseOk: true, problems: [], answerKey: key() }],
+    });
+    const r = await turn.prepareQuestion(base);
+    expect(r.attempts).toHaveLength(1);
+    expect(r.attempts[0].naming.ok).toBe(true);
+  });
+  it('시도마다 흘림 검사가 돌려준 기술과 역할을 바꾸기 전 그대로 남긴다', async () => {
+    const first = [
+      { name: 'Kafka', role: 'premise' },
+      { name: 'Redis', role: 'user' },
+    ];
+    const { turn } = await service({
+      question: [q('none', 'Kafka와 비교하면요?'), q('none', '다른 대안은요?')],
+      leak: [{ techs: first }, { techs: [] }],
+    });
+    const r = await turn.prepareQuestion(base);
+    expect(r.attempts.map((a) => a.techs)).toEqual([first, []]);
+  });
+  it('usage는 호출마다 하나씩이고, 정답지가 고쳐져도 attempts 안의 질문은 그대로다', async () => {
+    const fixed = key(['고침']);
+    const { turn, calls } = await service({
+      question: [q('identity_swap')],
+      leak: [{ techs: [] }],
+      verify: [
+        { premiseOk: true, problems: [{ field: 'keyPoints', problem: '틀림' }], answerKey: fixed },
+      ],
+    });
+    const r = await turn.prepareQuestion(base);
+    expect(r.usage).toHaveLength(calls.length);
+    expect(r.attempts[0].question.answerKey).toEqual(key());
+  });
+  it('입력의 feedback은 재시도에서도 맨 앞에 남는다', async () => {
+    const { turn, calls } = await service({
+      question: [q('none', 'Kafka는요?'), q('none', '다른 대안은요?')],
+      leak: [{ techs: [{ name: 'Kafka', role: 'solution' }] }, { techs: [] }],
+    });
+    await turn.prepareQuestion({ ...base, feedback: ['처음 지적'] });
+    const retry = calls[2].user;
+    expect(retry.indexOf('- 처음 지적')).toBeGreaterThan(-1);
+    expect(retry.indexOf('- 처음 지적')).toBeLessThan(retry.indexOf('- 해답으로 꺼내면'));
+  });
 });
 
 describe('TurnService.handleAnswer', () => {
@@ -166,5 +221,34 @@ describe('TurnService.handleAnswer', () => {
     });
     expect(r.pick?.interviewerId).toBe('p1');
     expect(r.pick?.reactionIntent).toBe('B9');
+  });
+  it('analysis는 받은 그대로 돌려준다(결함 없음 보충은 pick에만)', async () => {
+    const analysis = { kind: 'answer', defects: [], mentionedTechs: ['Lua'] };
+    const { turn } = await service({ analyze: [analysis] });
+    const r = await turn.handleAnswer({
+      topic: 'Redis',
+      panel,
+      history: ['p2'],
+      askedBy: 'p2',
+      question: q('identity_swap'),
+      answer: '...',
+      userMentioned: [],
+    });
+    expect(r.analysis).toEqual({ kind: 'answer', defects: [], mentionedTechs: ['Lua'] });
+  });
+  it('askedBy가 패널에 없으면 던진다', async () => {
+    const { turn, calls } = await service({ analyze: [] });
+    await expect(
+      turn.handleAnswer({
+        topic: 'Redis',
+        panel,
+        history: [],
+        askedBy: 'p9',
+        question: q('none'),
+        answer: '...',
+        userMentioned: [],
+      }),
+    ).rejects.toThrow('패널에 없는 면접관');
+    expect(calls).toHaveLength(0);
   });
 });

@@ -15,6 +15,7 @@ import type {
   Defect,
   PreparedQuestion,
   QuestionInput,
+  TechMention,
   TokenUsage,
   Verification,
 } from './types';
@@ -42,17 +43,20 @@ export class TurnService {
         userMentioned: input.userMentioned,
       });
       usage.push(detected.usage);
-      const naming = checkNaming({
-        techs: detected.data.techs,
-        userMentioned: input.userMentioned,
-      });
+      const techs = detected.data.techs;
+      // 설계 6.3: premise는 가정 변경의 전제일 때만 허용한다. 가정 없는 질문의 premise는 해답으로 본다.
+      const checked =
+        question.assumption.axis === 'none'
+          ? techs.map((t): TechMention => (t.role === 'premise' ? { ...t, role: 'solution' } : t))
+          : techs;
+      const naming = checkNaming({ techs: checked, userMentioned: input.userMentioned });
       verification = null;
       if (naming.ok && question.assumption.axis !== 'none') {
         const verified = await verifyAnswerKey(this.llm, { topic: input.topic, question });
         usage.push(verified.usage);
         verification = verified.data;
       }
-      attempts.push({ question, naming, verification });
+      attempts.push({ question, naming, verification, techs });
 
       leak = !naming.ok;
       if (leak) {

@@ -62,6 +62,9 @@ describe('question.call', () => {
     for (const [id, name] of Object.entries(REACTION_INTENTS))
       expect(system).toContain(`${id} ${name}:`);
     for (const a of AXES) expect(system).toContain(a.name);
+    const systemLines = system.split('\n');
+    for (const a of AXES) expect(systemLines).toContain(`- ${a.id} ${a.name}`);
+    expect(systemLines).toContain('- none 가정을 바꾸지 않는 질문');
   });
   it('축이 지정된 첫 질문에는 기본 질문 안내가 없다', () => {
     const first = { ...input, reactionIntent: null, defect: null, history: [], feedback: [] };

@@ -1,5 +1,5 @@
 import { readEngineConfig } from '../../src/config/engine.config';
-import { PreparedQuestion } from '../../src/interview/types';
+import { PreparedQuestion, Question } from '../../src/interview/types';
 import { R1Result, renderReport, sumUsage } from './report';
 
 const prepared: PreparedQuestion = {
@@ -161,5 +161,118 @@ describe('R1 report', () => {
     expect(md).toContain('  > 문제 둘째 줄');
     expect(md).not.toMatch(/^둘째 줄/m);
     expect(md).not.toMatch(/^문제 둘째 줄/m);
+  });
+  it('흘림 검사가 찾은 기술과 역할을 시도마다 보여 주고, 가정 없는 질문의 premise 바꿈을 알린다', () => {
+    const noAssumption: Question = {
+      ...prepared.question,
+      assumption: { axis: 'none', statement: '' },
+    };
+    const withTechs: PreparedQuestion = {
+      ...prepared,
+      question: noAssumption,
+      verification: null,
+      answerKeyCorrected: false,
+      attempts: [
+        {
+          question: noAssumption,
+          naming: { ok: false, violations: ['PostgreSQL'] },
+          verification: null,
+          techs: [
+            { name: 'PostgreSQL', role: 'premise' },
+            { name: 'Redis', role: 'user' },
+          ],
+        },
+        {
+          question: noAssumption,
+          naming: { ok: true, violations: [] },
+          verification: null,
+          techs: [],
+        },
+      ],
+    };
+    const md = renderReport({
+      startedAt: '2026-11-16T00:00:00Z',
+      results: [{ ...results[0], first: { prepared: withTechs, lateVerification: null } }],
+    });
+    expect(md).toContain('- 시도 1 검출된 기술: PostgreSQL(premise), Redis(user)');
+    expect(md).toContain('- 시도 2 검출된 기술: 없음');
+    expect(md).toMatch(/시도 1.*premise.*solution.*PostgreSQL/);
+    expect(md).not.toMatch(/시도 2.*premise.*solution/);
+  });
+  it('지정한 축을 보여 주고, 모델이 적은 축과 다르면 다르다고 적는다', () => {
+    const none: PreparedQuestion = {
+      ...prepared,
+      question: { ...prepared.question, assumption: { axis: 'none', statement: '' } },
+    };
+    const render = (step: R1Result['first']) =>
+      renderReport({
+        startedAt: '2026-11-16T00:00:00Z',
+        results: [{ ...results[0], first: step }],
+      });
+    const same = render({ prepared, lateVerification: null, targetAxis: 'identity_swap' });
+    expect(same).toContain('- 지정한 축: 기술의 핵심 속성 바꾸기(정체성 비교)');
+    expect(same).not.toContain('다르다');
+    const differs = render({ prepared: none, lateVerification: null, targetAxis: 'identity_swap' });
+    expect(differs).toMatch(/- 지정한 축: 기술의 핵심 속성 바꾸기\(정체성 비교\).*다르다/);
+    expect(render({ prepared, lateVerification: null })).not.toContain('지정한 축');
+  });
+  it('가정 없는 질문의 premise flag는 해당 없음으로 적고, 버린 이유와 질문 문장은 따로 읽힌다', () => {
+    const none: PreparedQuestion = {
+      ...prepared,
+      question: { ...prepared.question, assumption: { axis: 'none', statement: '' } },
+      verification: null,
+      answerKeyCorrected: false,
+      attempts: [
+        {
+          question: { ...prepared.question, text: '버려진 질문 문장' },
+          naming: { ok: true, violations: [] },
+          verification: {
+            premiseOk: false,
+            problems: [{ field: 'text', problem: '이유 첫 줄\n이유 둘째 줄' }],
+            answerKey: prepared.question.answerKey,
+          },
+        },
+        prepared.attempts[1],
+      ],
+    };
+    const md = renderReport({
+      startedAt: '2026-11-16T00:00:00Z',
+      results: [
+        { ...results[0], first: { prepared: none, lateVerification: null }, followUps: [] },
+      ],
+    });
+    expect(md).toMatch(/premise\(.*\) 해당 없음/);
+    expect(md).not.toMatch(/premise\(.*\) false/);
+    expect(md).toContain('  > 버려진 질문 문장');
+    expect(md).not.toContain('이유 둘째 줄)\n  > 버려진 질문 문장');
+  });
+  it('pick이 없어 후속 질문이 없을 때, 사후 검증 중 실패, 시나리오가 멈춘 줄', () => {
+    const none: PreparedQuestion = {
+      ...prepared,
+      question: { ...prepared.question, assumption: { axis: 'none', statement: '' } },
+      verification: null,
+    };
+    const noPick = { ...results[0].followUps[0], pick: null, next: null };
+    const ok = renderReport({
+      startedAt: '2026-11-16T00:00:00Z',
+      results: [{ ...results[0], followUps: [noPick] }],
+    });
+    expect(ok).toContain('- 고른 면접관 없음(pick 없음)');
+    expect(ok).toContain('후속 질문을 만들지 않았다.');
+    expect(ok).not.toContain('시나리오가 여기서 멈췄다');
+    const failed = renderReport({
+      startedAt: '2026-11-16T00:00:00Z',
+      results: [
+        {
+          ...results[0],
+          first: { prepared: none, lateVerification: null },
+          followUps: [],
+          error: '검증 실패',
+          answerCount: 3,
+        },
+      ],
+    });
+    expect(failed).toContain('- 사후 검증 중 실패(시나리오 오류 참고)');
+    expect(failed).toContain('시나리오가 여기서 멈췄다: 답 3개 중 0개까지 기록.');
   });
 });

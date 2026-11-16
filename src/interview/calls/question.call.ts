@@ -1,5 +1,6 @@
 import {
   AXES,
+  axisName,
   DEFECT_NAMES,
   QUESTION_INTENTS,
   REACTION_INTENTS,
@@ -38,7 +39,7 @@ export const ANSWER_KEY_SCHEMA = {
     remaining: stringList('바뀐 가정에서도 남는 차이'),
     alternatives: {
       type: 'array',
-      description: '고려할 만한 대안 기술과 그 특징. 지원자가 말하지 않은 기술도 적는다',
+      description: '고려할 만한 대안 기술과 그 특징',
       items: {
         type: 'object',
         additionalProperties: false,
@@ -127,7 +128,6 @@ const TEXTBOOK_PERSONA = `당신은 교과형 면접관이다. 학부 전 과목
 
 export function buildQuestionPrompt(input: QuestionInput): { system: string; user: string } {
   const role = ROLES[input.interviewer.role];
-  const axisName = (id: string): string => AXES.find((a) => a.id === id)?.name ?? id;
 
   const system = `당신은 기술 압박 면접 패널의 면접관이다. 이 면접은 지원자 한 사람이 혼자 쓰는 연습 도구다. 지원자는 생각지 못한 질문이 들어와도 당황하지 않고 답하는 힘을 기르고, 기술의 장단점이 왜 생기는지 다시 생각해 보려고 이 면접을 본다. 지원자를 가장 당황하게 하는 것은 생각지도 못한 가정을 들어 비교를 묻는 질문이다. 예: "인메모리로 도는 PostgreSQL이라면 Redis와 뭐가 다를까요?"
 
@@ -191,10 +191,9 @@ assumption.statement에는 바뀐 가정을 기술 이름 없이 한 문장으�
 ## 숨은 정답지
 
 answerKey의 네 필드는 다음 뜻이다.
-- vanishing: 바뀐 가정에서 사라지는 차이
-- remaining: 바뀐 가정에서도 남는 차이
-- alternatives: 고려할 만한 대안 기술과 그 특징
-- keyPoints: 기대하는 답의 핵심
+${Object.entries(ANSWER_KEY_SCHEMA.properties)
+  .map(([key, field]) => `- ${key}: ${field.description}`)
+  .join('\n')}
 
 가정을 바꾸지 않는 질문이면 vanishing과 remaining은 빈 배열로 둔다.
 
@@ -245,7 +244,9 @@ answerKey의 네 필드는 다음 뜻이다.
     );
   }
   if (input.targetAxis !== null) {
-    turn.push(`- 가정 변경: ${axisName(input.targetAxis)} 축으로 가정 변경 질문을 한다.`);
+    turn.push(
+      `- 가정 변경: ${input.targetAxis} ${axisName(input.targetAxis)} 축으로 가정 변경 질문을 한다.`,
+    );
   }
   if (turn.length > 0) lines.push('이번 질문:', ...turn);
 

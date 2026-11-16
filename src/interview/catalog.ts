@@ -17,6 +17,9 @@ export const AXES = [
 
 export type AxisId = (typeof AXES)[number]['id'];
 
+// 목록에 없는 id(none 등)는 id 그대로 돌려준다.
+export const axisName = (id: string): string => AXES.find((a) => a.id === id)?.name ?? id;
+
 // 모든 면접관이 질문에 쓰고, 결함 담당은 없다.
 export const SHARED_AXES = ['identity_swap'] as const;
 export type SharedAxisId = (typeof SHARED_AXES)[number];

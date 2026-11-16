@@ -47,7 +47,12 @@ async function makeStep(
   deps.log(`${label} 질문 생성`);
   const prepared = await deps.turn.prepareQuestion(input);
   usage.push(...prepared.usage);
-  const step: R1Step = { prepared, lateVerification: null, askedBy: input.interviewer.id };
+  const step: R1Step = {
+    prepared,
+    lateVerification: null,
+    askedBy: input.interviewer.id,
+    targetAxis: input.targetAxis,
+  };
   save(step);
   if (prepared.question.assumption.axis !== 'none') return step;
   deps.log(`${label} 사후 검증`);
@@ -71,6 +76,7 @@ export async function runScenarios(deps: R1Deps, scenarios: Scenario[]): Promise
       followUps: [],
       usage: [],
       error: null,
+      answerCount: s.answers.length,
     };
     results.push(result);
     try {
@@ -91,7 +97,12 @@ export async function runScenarios(deps: R1Deps, scenarios: Scenario[]): Promise
         result.usage,
         (step) => (result.first = step),
       );
-      const question = first.prepared.question;
+      // 설계 6.2의 6단계: 사후 검증이 정답지를 고쳤으면 이후 반응에는 고친 정답지를 쓴다.
+      const late = first.lateVerification;
+      const question =
+        late && late.problems.length > 0
+          ? { ...first.prepared.question, answerKey: late.answerKey }
+          : first.prepared.question;
 
       for (const [i, a] of s.answers.entries()) {
         const label = `[${s.id}] 답 ${i + 1}/${s.answers.length} (${a.kind})`;

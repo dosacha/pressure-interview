@@ -1,5 +1,5 @@
 import {
-  AXES,
+  axisName,
   DEFECT_NAMES,
   DEFECT_PRIORITY,
   DEFECT_TYPES,
@@ -59,8 +59,6 @@ const DEFECT_DEFS: Record<DefectType, string> = {
   none: '정답지의 핵심을 맞게 짚었고 위의 결함이 없다.',
 };
 
-const axisName = (id: string): string => AXES.find((a) => a.id === id)?.name ?? id;
-
 function buildAnalyzePrompt(input: { topic: string; question: Question; answer: string }): {
   system: string;
   user: string;
@@ -75,8 +73,7 @@ function buildAnalyzePrompt(input: { topic: string; question: Question; answer: 
 판정의 1차 기준은 질문의 숨은 정답지다. 정답지는 질문을 쓴 면접관이 기대한 답을 담고 있으므로, 답변이 정답지의 어디를 맞히고 어디를 놓쳤는지를 본다. 정답지가 다루지 않은 내용에서 명백히 틀린 말은 아래 wrong의 기준대로 따로 잡는다. 정답지 필드의 뜻은 다음과 같다.
 
 ${Object.entries(ANSWER_KEY_SCHEMA.properties)
-  // 둘째 문장부터는 정답지를 쓰는 면접관용 지시라 뺀다.
-  .map(([key, field]) => `- ${key}: ${field.description.split('. ')[0]}`)
+  .map(([key, field]) => `- ${key}: ${field.description}`)
   .join('\n')}
 
 면접 중의 판정 오류는 복기에서 바로잡으므로, 판정이 틀릴 수 있다는 것은 받아들여져 있다. 다만 결함은 답변에 실제로 있는 말과 빠진 내용에서만 찾고, 답변에 없는 말을 지어내 결함으로 삼지 않는다. 지어낸 결함에는 지원자가 하지 않은 말을 따지는 질문이 이어지기 때문이다.

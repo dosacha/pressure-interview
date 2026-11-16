@@ -80,6 +80,12 @@ describe('analyze / verify / leak 호출', () => {
     expect(examples).toHaveLength(4);
     for (const line of examples) expect(`${system}\n${user}`).toContain(line);
   });
+  it('흘림 검사의 user 프롬프트에 지원자가 말한 기술이 실린다', async () => {
+    const { user } = await promptOf((llm) =>
+      detectTechs(llm, { questionText: question.text, userMentioned: ['Memcached', 'Lua'] }),
+    );
+    expect(user).toContain('Memcached, Lua');
+  });
   it('검증 프롬프트의 user에 질문 문장과 정답지 항목이 있다', async () => {
     const { user } = await promptOf((llm) => verifyAnswerKey(llm, { topic: 'Redis', question }));
     for (const s of [question.text, '디스크 I/O', 'MVCC']) expect(user).toContain(s);

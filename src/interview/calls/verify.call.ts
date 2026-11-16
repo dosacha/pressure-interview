@@ -1,4 +1,4 @@
-import { AXES, QUESTION_INTENTS } from '../catalog';
+import { axisName, QUESTION_INTENTS } from '../catalog';
 import type { JsonLlm } from '../llm/llm.service';
 import type { Question, TokenUsage, Verification } from '../types';
 import { ANSWER_KEY_SCHEMA } from './question.call';
@@ -23,7 +23,7 @@ export const VERIFY_SCHEMA = {
         properties: {
           field: {
             type: 'string',
-            enum: ['text', 'statement', 'vanishing', 'remaining', 'alternatives', 'keyPoints'],
+            enum: ['text', 'statement', ...Object.keys(ANSWER_KEY_SCHEMA.properties)],
             description: '틀린 부분',
           },
           problem: { type: 'string', description: '무엇이 왜 틀렸는지' },
@@ -71,7 +71,7 @@ answerKey에는 고친 정답지를 돌려준다. 틀린 항목은 고치고, �
   const assumption =
     question.assumption.axis === 'none'
       ? '없음(가정을 바꾸지 않는 질문)'
-      : `${AXES.find((a) => a.id === question.assumption.axis)?.name ?? question.assumption.axis} 축. statement: ${question.assumption.statement}`;
+      : `${axisName(question.assumption.axis)} 축. statement: ${question.assumption.statement}`;
   const user = [
     `주제: ${input.topic}`,
     '',

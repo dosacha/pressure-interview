@@ -10,7 +10,7 @@ export interface EngineConfig {
   maxRegenerations: number;
 }
 
-const ROLES: CallRole[] = ['analyze', 'question', 'verify', 'leak'];
+export const CALL_ROLES: CallRole[] = ['analyze', 'question', 'verify', 'leak'];
 const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 const DEFAULT_MODEL = 'claude-opus-5-5';
 const DEFAULT_EFFORT: Record<CallRole, Effort> = {
@@ -45,7 +45,7 @@ function readPositiveInt(env: NodeJS.ProcessEnv, key: string, fallback: number):
 export function readEngineConfig(env: NodeJS.ProcessEnv): EngineConfig {
   const models = {} as Record<CallRole, string>;
   const effort = {} as Record<CallRole, Effort>;
-  for (const role of ROLES) {
+  for (const role of CALL_ROLES) {
     models[role] = read(env, `ENGINE_MODEL_${role.toUpperCase()}`) ?? DEFAULT_MODEL;
     effort[role] = readEffort(env, role);
   }

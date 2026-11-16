@@ -12,13 +12,13 @@ const ok = {
     { type: 'text', text: '{"a":1}' },
   ],
 };
-async function make(response: object) {
+async function make(response: object, env: NodeJS.ProcessEnv = {}) {
   const create = jest.fn<Promise<object>, [object]>().mockResolvedValue(response);
   const mod = await Test.createTestingModule({
     providers: [
       LlmService,
       { provide: ANTHROPIC_CLIENT, useValue: { beta: { messages: { create } } } },
-      { provide: engineConfig.KEY, useValue: readEngineConfig({}) },
+      { provide: engineConfig.KEY, useValue: readEngineConfig(env) },
     ],
   }).compile();
   return { llm: mod.get(LlmService), create };
@@ -50,6 +50,23 @@ describe('LlmService', () => {
       }),
     );
     expect(create.mock.calls[0][0]).not.toHaveProperty('thinking');
+  });
+  it('모델과 effort는 부른 역할의 설정에서 온다', async () => {
+    const { llm, create } = await make(ok, {
+      ENGINE_MODEL_ANALYZE: 'm-analyze',
+      ENGINE_MODEL_QUESTION: 'm-question',
+      ENGINE_MODEL_VERIFY: 'm-verify',
+      ENGINE_MODEL_LEAK: 'm-leak',
+      ENGINE_EFFORT_ANALYZE: 'low',
+      ENGINE_EFFORT_QUESTION: 'medium',
+      ENGINE_EFFORT_VERIFY: 'high',
+      ENGINE_EFFORT_LEAK: 'max',
+    });
+    await llm.callJson({ role: 'leak', system: 'S', user: 'U', schema: {} });
+    expect(create.mock.calls[0][0]).toMatchObject({
+      model: 'm-leak',
+      output_config: { effort: 'max' },
+    });
   });
   it('거절은 RefusalError', async () => {
     const { llm } = await make({

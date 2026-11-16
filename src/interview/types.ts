@@ -75,7 +75,13 @@ export interface PreparedQuestion {
   verification: Verification | null;
   answerKeyCorrected: boolean;
   flags: { leak: boolean; premise: boolean };
-  attempts: { question: Question; naming: NamingResult; verification: Verification | null }[];
+  attempts: {
+    question: Question;
+    naming: NamingResult;
+    verification: Verification | null;
+    // 흘림 검사가 돌려준 그대로(가정 없는 질문에서 premise를 solution으로 바꾸기 전)
+    techs?: TechMention[];
+  }[];
   usage: TokenUsage[];
 }
 export interface AnswerInput {
