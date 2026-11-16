@@ -63,4 +63,12 @@ describe('question.call', () => {
       expect(system).toContain(`${id} ${name}:`);
     for (const a of AXES) expect(system).toContain(a.name);
   });
+  it('축이 지정된 첫 질문에는 기본 질문 안내가 없다', () => {
+    const first = { ...input, reactionIntent: null, defect: null, history: [], feedback: [] };
+    const basic = '기본 질문으로 시작해도 된다';
+    expect(buildQuestionPrompt({ ...first, targetAxis: null }).user).toContain(basic);
+    const { user } = buildQuestionPrompt(first);
+    expect(user).toContain('첫 질문');
+    expect(user).not.toContain(basic);
+  });
 });
