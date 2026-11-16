@@ -117,4 +117,49 @@ describe('R1 report', () => {
     expect(md).toContain('claude-test-verify');
     expect(md).toContain('버려진 질문: Kafka로 바꾸면?');
   });
+  it('질문자, 남은 위반, 사후 검증의 전제 오류, 후속 실패를 보여 주고 줄바꿈에 목록이 끊기지 않는다', () => {
+    const leaked: PreparedQuestion = {
+      ...prepared,
+      question: { ...prepared.question, assumption: { axis: 'none', statement: '' } },
+      verification: null,
+      answerKeyCorrected: false,
+      flags: { leak: true, premise: false },
+      attempts: [
+        {
+          question: { ...prepared.question, text: '첫 줄\n둘째 줄' },
+          naming: { ok: false, violations: ['Kafka'] },
+          verification: null,
+        },
+        {
+          question: prepared.question,
+          naming: { ok: false, violations: ['RabbitMQ'] },
+          verification: null,
+        },
+      ],
+    };
+    const late = {
+      premiseOk: false,
+      problems: [{ field: 'text', problem: '문제 첫 줄\n문제 둘째 줄' }],
+      answerKey: prepared.question.answerKey,
+    };
+    const md = renderReport({
+      startedAt: '2026-11-16T00:00:00Z',
+      results: [
+        {
+          ...results[0],
+          first: { prepared: leaked, lateVerification: late, askedBy: 'p1' },
+          followUps: [{ ...results[0].followUps[0], next: null }],
+          error: 'boom',
+        },
+      ],
+    });
+    expect(md).toContain('### 첫 질문 — p1 (DBA · 흔드는형)');
+    expect(md).toContain('최종 질문에 남은 이름 위반: RabbitMQ');
+    expect(md).toContain('이미 나간 질문의 전제가 사후 검증에서 틀린 것으로 나옴');
+    expect(md).toContain('후속 질문 생성 중 실패');
+    expect(md).toContain('  > 둘째 줄');
+    expect(md).toContain('  > 문제 둘째 줄');
+    expect(md).not.toMatch(/^둘째 줄/m);
+    expect(md).not.toMatch(/^문제 둘째 줄/m);
+  });
 });

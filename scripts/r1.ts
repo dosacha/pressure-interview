@@ -19,7 +19,11 @@ async function main(): Promise<number> {
   }
 
   const startedAt = new Date().toISOString();
-  const app = await NestFactory.createApplicationContext(R1Module, { logger: ['error', 'warn'] });
+  // abortOnError: false — 부팅 오류(키 누락, ENGINE_* 값 오류)가 Nest의 process.exit 대신 아래 처리기로 오게 한다.
+  const app = await NestFactory.createApplicationContext(R1Module, {
+    logger: ['error', 'warn'],
+    abortOnError: false,
+  });
   try {
     const results = await runScenarios(
       { turn: app.get(TurnService), llm: app.get(LlmService), log: (line) => console.log(line) },
@@ -42,7 +46,7 @@ main().then(
     process.exitCode = code;
   },
   (e: unknown) => {
-    // 스택과 환경 변수 값을 찍지 않으려고 메시지만 낸다.
+    // 이 처리기는 메시지만 찍는다. 부팅 오류는 그 전에 Nest 로거가 스택과 함께 한 번 찍는다.
     console.error(`실행 실패: ${e instanceof Error ? e.message : String(e)}`);
     process.exitCode = 1;
   },

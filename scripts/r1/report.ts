@@ -21,6 +21,7 @@ import type {
 export interface R1Step {
   prepared: PreparedQuestion;
   lateVerification: Verification | null;
+  askedBy?: string;
 }
 export interface R1FollowUp {
   answerKind: string;
@@ -60,37 +61,66 @@ const CHECKLIST = [
 const axisName = (id: string) => AXES.find((a) => a.id === id)?.name ?? id;
 const list = (items: string[]) => (items.length > 0 ? items.join(', ') : '(없음)');
 const quote = (text: string) => `> ${text.split('\n').join('\n> ')}`;
+// 목록 항목 안의 인용 블록. 모델이 만든 문장에 줄바꿈이 있어도 목록이 끊기지 않는다.
+const nestedQuote = (text: string) => `  ${quote(text).split('\n').join('\n  ')}`;
+const inline = (label: string, text: string) =>
+  text.includes('\n') ? `${label}\n${nestedQuote(text)}` : `${label} ${text}`;
 
 function memberName(panel: PanelMember[], id: string): string {
   const m = panel.find((p) => p.id === id);
   return m ? `${id} (${ROLES[m.role].name} · ${TEMPERAMENTS[m.temperament]})` : id;
 }
-function defectLine(d: Defect): string {
-  return `${DEFECT_NAMES[d.type]} · 축 ${axisName(d.axis)}${d.note ? ` — ${d.note}` : ''}`;
-}
+const defectName = (d: Defect) => `${DEFECT_NAMES[d.type]} · 축 ${axisName(d.axis)}`;
 function choiceLine(panel: PanelMember[], c: PickChoice): string {
-  return `${memberName(panel, c.interviewerId)}, 반응 의도 ${c.reactionIntent} ${REACTION_INTENTS[c.reactionIntent]}, 맡은 결함: ${defectLine(c.defect)}`;
+  return `${memberName(panel, c.interviewerId)}, 반응 의도 ${c.reactionIntent} ${REACTION_INTENTS[c.reactionIntent]}, 맡은 결함: ${defectName(c.defect)}`;
 }
 
-function renderStep(step: R1Step, heading: string): string[] {
+function verificationLines(
+  title: string,
+  v: Verification,
+  corrected: boolean,
+  extra: string[] = [],
+): string[] {
+  return [
+    `**${title}**`,
+    '',
+    `- 전제: ${v.premiseOk ? '맞음' : '틀림'}`,
+    ...extra,
+    ...(v.problems.length > 0
+      ? v.problems.map((p) => inline(`- 문제 [${p.field}]:`, p.problem))
+      : ['- 문제: 없음']),
+    ...(corrected ? ['- 정답지 수정됨'] : []),
+    '',
+  ];
+}
+
+function renderStep(
+  step: R1Step,
+  heading: string,
+  panel: PanelMember[],
+  scenarioFailed: boolean,
+): string[] {
   const { question, verification, answerKeyCorrected, flags, attempts } = step.prepared;
   const late = step.lateVerification;
   const lateCorrected = late !== null && late.problems.length > 0;
   const key = lateCorrected ? late.answerKey : question.answerKey;
-  const shown = late ?? verification;
-  const assumption =
-    question.assumption.axis === 'none'
-      ? '없음(가정을 바꾸지 않는 질문)'
-      : `${axisName(question.assumption.axis)} — ${question.assumption.statement}`;
+  const noAssumption = question.assumption.axis === 'none';
+  const assumption = noAssumption
+    ? '없음(가정을 바꾸지 않는 질문)'
+    : `${axisName(question.assumption.axis)} — ${question.assumption.statement}`;
+  const lastNaming = attempts[attempts.length - 1]?.naming;
 
   const lines = [
-    heading,
+    step.askedBy ? `${heading} — ${memberName(panel, step.askedBy)}` : heading,
     '',
     quote(question.text),
     '',
     `- 숨은 질문 의도: ${question.questionIntent} ${QUESTION_INTENTS[question.questionIntent]}`,
     `- 바뀐 가정: ${assumption}`,
-    `- flags: leak(흘림이 끝까지 남음) ${flags.leak}, premise(전제 오류가 끝까지 남음) ${flags.premise}`,
+    `- flags: leak(흘림이 끝까지 남음) ${flags.leak}, premise(사전 검증에서 전제 오류가 끝까지 남음) ${flags.premise}`,
+    ...(lastNaming && !lastNaming.ok
+      ? [`- 최종 질문에 남은 이름 위반: ${list(lastNaming.violations)}`]
+      : []),
     '',
     `**숨은 정답지**${answerKeyCorrected || lateCorrected ? ' (정답지 수정됨, 고친 것을 보여 준다)' : ''}`,
     '',
@@ -99,25 +129,31 @@ function renderStep(step: R1Step, heading: string): string[] {
     `- 대안 기술: ${list(key.alternatives.map((a) => `${a.name} — ${a.traits}`))}`,
     `- 기대하는 답의 핵심: ${list(key.keyPoints)}`,
     '',
-    '**검증**',
-    '',
   ];
-  if (!shown) {
-    lines.push('- 검증하지 않았다');
-  } else {
+
+  if (verification) {
     lines.push(
-      `- 시점: ${late ? '질문 뒤 검증(가정 없는 질문)' : '질문을 보여 주기 전'}`,
-      `- 전제: ${shown.premiseOk ? '맞음' : '틀림'}`,
-      ...(shown.problems.length > 0
-        ? shown.problems.map((p) => `- 문제 [${p.field}]: ${p.problem}`)
-        : ['- 문제: 없음']),
+      ...verificationLines('사전 검증(질문을 보여 주기 전)', verification, answerKeyCorrected),
     );
-    if (answerKeyCorrected || lateCorrected) lines.push('- 정답지 수정됨');
+  }
+  if (late) {
+    lines.push(
+      ...verificationLines(
+        '사후 검증(가정 없는 질문, 질문이 나간 뒤)',
+        late,
+        lateCorrected,
+        late.premiseOk ? [] : ['- 이미 나간 질문의 전제가 사후 검증에서 틀린 것으로 나옴'],
+      ),
+    );
+  } else if (noAssumption && scenarioFailed) {
+    lines.push('**사후 검증**', '', '- 사후 검증 중 실패(시나리오 오류 참고)', '');
+  }
+  if (!verification && !late && !(noAssumption && scenarioFailed)) {
+    lines.push('**검증**', '', '- 검증하지 않았다', '');
   }
 
   const discarded = attempts.slice(0, -1);
   lines.push(
-    '',
     '**흘림 검사**',
     '',
     `- 첫 시도의 위반: ${list(attempts[0]?.naming.violations ?? [])}`,
@@ -127,14 +163,19 @@ function renderStep(step: R1Step, heading: string): string[] {
     const reason = !a.naming.ok
       ? `이름 위반(${a.naming.violations.join(', ')})`
       : `전제 오류(${(a.verification?.problems ?? []).map((p) => p.problem).join(' / ')})`;
-    lines.push(`- 버려진 시도 ${i + 1}: "${a.question.text}" — 버린 이유: ${reason}`);
+    lines.push(inline(`- 버려진 시도 ${i + 1} — 버린 이유:`, reason), nestedQuote(a.question.text));
   });
 
   lines.push('', '**검토**', '', ...CHECKLIST, '');
   return lines;
 }
 
-function renderFollowUp(panel: PanelMember[], f: R1FollowUp, n: number): string[] {
+function renderFollowUp(
+  panel: PanelMember[],
+  f: R1FollowUp,
+  n: number,
+  scenarioFailed: boolean,
+): string[] {
   const { analysis, pick } = f;
   const lines = [
     `### 후속 ${n} — 지원자 답: ${f.answerKind}`,
@@ -145,7 +186,9 @@ function renderFollowUp(panel: PanelMember[], f: R1FollowUp, n: number): string[
     '',
     `- 판정: ${analysis.kind === 'clarify' ? '되묻기' : '답'}`,
     ...(analysis.defects.length > 0
-      ? analysis.defects.map((d) => `- 결함: ${defectLine(d)}`)
+      ? analysis.defects.map((d) =>
+          d.note ? inline(`- 결함: ${defectName(d)} —`, d.note) : `- 결함: ${defectName(d)}`,
+        )
       : ['- 결함: 분석이 돌려준 결함 없음']),
     `- 지원자가 말한 것으로 잡힌 기술: ${list(analysis.mentionedTechs)}`,
     '',
@@ -165,7 +208,8 @@ function renderFollowUp(panel: PanelMember[], f: R1FollowUp, n: number): string[
     );
   }
   lines.push('');
-  if (f.next) lines.push(...renderStep(f.next, `#### 후속 질문 ${n}`));
+  if (f.next) lines.push(...renderStep(f.next, `#### 후속 질문 ${n}`, panel, scenarioFailed));
+  else if (pick && scenarioFailed) lines.push('후속 질문 생성 중 실패(시나리오 오류 참고).', '');
   else lines.push('후속 질문을 만들지 않았다.', '');
   return lines;
 }
@@ -207,8 +251,9 @@ export function renderReport(run: {
   );
 
   for (const r of results) {
+    const failed = r.error !== null;
     lines.push(`## 시나리오 ${r.scenarioId} (주제: ${r.topic})`, '');
-    if (r.error !== null) lines.push(`오류: ${r.error}`, '');
+    if (failed) lines.push(`오류: ${r.error}`, '');
     lines.push('**패널**', '');
     lines.push(
       ...(r.panel.length > 0
@@ -217,11 +262,14 @@ export function renderReport(run: {
       '',
     );
     if (r.first) {
-      lines.push(...renderStep(r.first, '### 첫 질문'));
+      lines.push(...renderStep(r.first, '### 첫 질문', r.panel, failed));
     } else {
       lines.push('첫 질문을 만들지 못했다.', '');
     }
-    r.followUps.forEach((f, i) => lines.push(...renderFollowUp(r.panel, f, i + 1)));
+    r.followUps.forEach((f, i) => lines.push(...renderFollowUp(r.panel, f, i + 1, failed)));
+    if (failed && r.first) {
+      lines.push(`시나리오가 여기서 멈췄다: 기록된 후속 ${r.followUps.length}개.`, '');
+    }
   }
   return lines.join('\n');
 }

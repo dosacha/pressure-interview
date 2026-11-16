@@ -4,7 +4,7 @@ import { verifyAnswerKey } from '../../src/interview/calls/verify.call';
 import { JsonLlm, RefusalError } from '../../src/interview/llm/llm.service';
 import type { TurnService } from '../../src/interview/turn.service';
 import type { PanelMember, QuestionInput, TokenUsage } from '../../src/interview/types';
-import type { R1Result, R1Step } from './report';
+import type { R1FollowUp, R1Result, R1Step } from './report';
 
 export interface Scenario {
   id: string;
@@ -36,16 +36,28 @@ function member(panel: PanelMember[], id: string): PanelMember {
   return m;
 }
 
-async function makeStep(deps: R1Deps, input: QuestionInput, usage: TokenUsage[]): Promise<R1Step> {
+// 질문이 만들어지면 사후 검증 전에 save로 넘긴다. 사후 검증이 실패해도 질문은 결과에 남는다.
+async function makeStep(
+  deps: R1Deps,
+  label: string,
+  input: QuestionInput,
+  usage: TokenUsage[],
+  save: (step: R1Step) => void,
+): Promise<R1Step> {
+  deps.log(`${label} 질문 생성`);
   const prepared = await deps.turn.prepareQuestion(input);
   usage.push(...prepared.usage);
-  if (prepared.question.assumption.axis !== 'none') return { prepared, lateVerification: null };
+  const step: R1Step = { prepared, lateVerification: null, askedBy: input.interviewer.id };
+  save(step);
+  if (prepared.question.assumption.axis !== 'none') return step;
+  deps.log(`${label} 사후 검증`);
   const verified = await verifyAnswerKey(deps.llm, {
     topic: input.topic,
     question: prepared.question,
   });
   usage.push(verified.usage);
-  return { prepared, lateVerification: verified.data };
+  step.lateVerification = verified.data;
+  return step;
 }
 
 export async function runScenarios(deps: R1Deps, scenarios: Scenario[]): Promise<R1Result[]> {
@@ -63,9 +75,9 @@ export async function runScenarios(deps: R1Deps, scenarios: Scenario[]): Promise
     results.push(result);
     try {
       const askedBy = s.first.interviewerId;
-      deps.log(`[${s.id}] 첫 질문`);
       const first = await makeStep(
         deps,
+        `[${s.id}] 첫 질문`,
         {
           topic: s.topic,
           interviewer: member(s.panel, askedBy),
@@ -77,8 +89,8 @@ export async function runScenarios(deps: R1Deps, scenarios: Scenario[]): Promise
           feedback: [],
         },
         result.usage,
+        (step) => (result.first = step),
       );
-      result.first = first;
       const question = first.prepared.question;
 
       for (const [i, a] of s.answers.entries()) {
@@ -95,11 +107,19 @@ export async function runScenarios(deps: R1Deps, scenarios: Scenario[]): Promise
         });
         result.usage.push(...answered.usage);
         const { pick } = answered;
-        let next: R1Step | null = null;
+        // 분석이 끝나면 먼저 남긴다. 후속 질문이 실패해도 이미 받은 analysis와 pick은 결과에 있다.
+        const followUp: R1FollowUp = {
+          answerKind: a.kind,
+          answer: a.text,
+          analysis: answered.analysis,
+          pick,
+          next: null,
+        };
+        result.followUps.push(followUp);
         if (pick) {
-          deps.log(`${label} 후속 질문`);
-          next = await makeStep(
+          await makeStep(
             deps,
+            `${label} 후속`,
             {
               topic: s.topic,
               interviewer: member(s.panel, pick.interviewerId),
@@ -111,15 +131,9 @@ export async function runScenarios(deps: R1Deps, scenarios: Scenario[]): Promise
               feedback: [],
             },
             result.usage,
+            (step) => (followUp.next = step),
           );
         }
-        result.followUps.push({
-          answerKind: a.kind,
-          answer: a.text,
-          analysis: answered.analysis,
-          pick,
-          next,
-        });
       }
       deps.log(`[${s.id}] 끝`);
     } catch (e) {

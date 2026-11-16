@@ -54,13 +54,15 @@ const lateVerification: Verification = {
   answerKey: { vanishing: [], remaining: [], alternatives: [], keyPoints: ['late'] },
 };
 
-function fakes() {
+function fakes(verifyError?: Error) {
   const prepareQuestion = jest.fn<Promise<PreparedQuestion>, [QuestionInput]>();
   const handleAnswer = jest.fn<Promise<AnswerResult>, [AnswerInput]>();
   const verifyCalls: JsonRequest[] = [];
+  const logs: string[] = [];
   const llm: JsonLlm = {
     callJson<T>(req: JsonRequest) {
       verifyCalls.push(req);
+      if (verifyError) return Promise.reject(verifyError);
       const data: unknown = lateVerification;
       return Promise.resolve({
         data: data as T,
@@ -69,8 +71,8 @@ function fakes() {
       });
     },
   };
-  const deps = { turn: { prepareQuestion, handleAnswer }, llm, log: () => {} };
-  return { deps, prepareQuestion, handleAnswer, verifyCalls };
+  const deps = { turn: { prepareQuestion, handleAnswer }, llm, log: (l: string) => logs.push(l) };
+  return { deps, prepareQuestion, handleAnswer, verifyCalls, logs };
 }
 
 describe('runScenarios', () => {
@@ -98,11 +100,37 @@ describe('runScenarios', () => {
     expect(r.usage.length).toBeGreaterThan(0);
   });
 
+  it('후속 질문 생성이 실패해도 그 답의 analysis와 pick은 남는다', async () => {
+    const f = fakes();
+    f.prepareQuestion
+      .mockResolvedValueOnce(prepared('identity_swap', 'Q'))
+      .mockRejectedValueOnce(new Error('후속 실패'));
+    f.handleAnswer.mockResolvedValue(answered(pick));
+    const [r] = await runScenarios(f.deps, [scenario('a', ['x', 'y'])]);
+    expect(r.error).toBe('후속 실패');
+    expect(r.followUps).toHaveLength(1);
+    expect(r.followUps[0].analysis.mentionedTechs).toEqual(['List']);
+    expect(r.followUps[0].pick).toEqual(pick);
+    expect(r.followUps[0].next).toBeNull();
+  });
+
+  it('사후 검증이 실패해도 첫 질문의 prepared는 남는다', async () => {
+    const f = fakes(new Error('검증 실패'));
+    f.prepareQuestion.mockResolvedValue(prepared('none', '기본 질문'));
+    const [r] = await runScenarios(f.deps, [scenario('a', ['x'])]);
+    expect(r.error).toBe('검증 실패');
+    expect(r.first?.prepared.question.text).toBe('기본 질문');
+    expect(r.first?.lateVerification).toBeNull();
+    expect(f.logs).toContain('[a] 첫 질문 사후 검증');
+  });
+
   it('후속 질문의 입력을 pick과 handleAnswer 결과로 조립한다', async () => {
     const f = fakes();
     f.prepareQuestion.mockResolvedValue(prepared('identity_swap', '첫 질문'));
     f.handleAnswer.mockResolvedValue(answered(pick));
-    await runScenarios(f.deps, [scenario('a', ['지원자 답'])]);
+    const [r] = await runScenarios(f.deps, [scenario('a', ['지원자 답'])]);
+    expect(r.first?.askedBy).toBe('p1');
+    expect(r.followUps[0].next?.askedBy).toBe('p2');
     expect(f.handleAnswer.mock.calls[0][0]).toMatchObject({
       history: ['p1'],
       askedBy: 'p1',
