@@ -1,6 +1,6 @@
 import { registerAs } from '@nestjs/config';
 
-export type CallRole = 'analyze' | 'question' | 'verify' | 'leak';
+export type CallRole = 'analyze' | 'question' | 'verify' | 'leak' | 'review';
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export interface EngineConfig {
@@ -10,7 +10,7 @@ export interface EngineConfig {
   maxRegenerations: number;
 }
 
-export const CALL_ROLES: CallRole[] = ['analyze', 'question', 'verify', 'leak'];
+export const CALL_ROLES: CallRole[] = ['analyze', 'question', 'verify', 'leak', 'review'];
 const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 const DEFAULT_MODEL = 'claude-opus-5-5';
 const DEFAULT_EFFORT: Record<CallRole, Effort> = {
@@ -18,6 +18,7 @@ const DEFAULT_EFFORT: Record<CallRole, Effort> = {
   question: 'medium',
   verify: 'medium',
   leak: 'low',
+  review: 'high',
 };
 
 // 빈 문자열은 설정 안 함으로 본다.

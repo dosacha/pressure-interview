@@ -9,6 +9,7 @@ import { pickJobRole } from './calls/job-role.call';
 import { detectTechs } from './calls/leak.call';
 import { checkPremise } from './calls/premise.call';
 import { generateQuestion } from './calls/question.call';
+import { reviewTurn } from './calls/review.call';
 import { verifyAnswerKey } from './calls/verify.call';
 import { LlmService } from './llm/llm.service';
 import { checkNaming } from './naming';
@@ -26,8 +27,10 @@ import type {
   PreparedDraft,
   PremiseCheck,
   QuestionInput,
+  ReviewInput,
   TechMention,
   TokenUsage,
+  TurnReview,
 } from './types';
 
 // 이름 위반을 다음 시도에 줄 피드백 문장으로 바꾼다. 해답 위반 먼저, 이름은 한 문장에만 넣는다.
@@ -149,6 +152,25 @@ export class TurnService {
   async pickJobRole(topic: string): Promise<{ role: JobRoleId; usage: TokenUsage }> {
     const { data, usage } = await pickJobRole(this.llm, topic);
     return { role: data.role, usage };
+  }
+
+  // 모델이 없는 결함·질문·가정을 가리켜도 뒤 단계가 흔들리지 않게 그런 항목을 버리거나 비운다.
+  async reviewTurn(input: ReviewInput): Promise<{ review: TurnReview; usage: TokenUsage }> {
+    const { data, usage } = await reviewTurn(this.llm, input);
+    const inRange = (index: number, length: number) => index >= 0 && index < length;
+    const { sameAs } = data.assumption;
+    return {
+      review: {
+        ...data,
+        defects: data.defects.filter((d) => inRange(d.index, input.analysis.defects.length)),
+        reactions: data.reactions.filter((r) => inRange(r.index, input.followUps.length)),
+        assumption: {
+          ...data.assumption,
+          sameAs: input.knownAssumptions.some((a) => a.key === sameAs) ? sameAs : null,
+        },
+      },
+      usage,
+    };
   }
 
   async handleAnswer(input: AnswerInput): Promise<AnswerResult> {

@@ -171,6 +171,50 @@ export interface ClarifyResult {
   leak: boolean;
   usage: TokenUsage[];
 }
+export type AssumptionResult = 'well' | 'wobbly' | 'wrong';
+export interface TurnReview {
+  // 답이 질문 의도를 향했는가
+  intent: { aimed: boolean; note: string };
+  // 면접 중 분석의 결함 하나하나. index는 analysis.defects의 순서
+  defects: { index: number; verdict: 'valid' | 'misjudged'; note: string }[];
+  // 이 답에서 나온 질문 하나하나. index는 ReviewInput.followUps의 순서
+  reactions: {
+    index: number;
+    verdict: 'valid_point' | 'misjudgment' | 'intended_test';
+    note: string;
+  }[];
+  // userResult는 사용자가 복기에서 고친 결과다. 모델은 채우지 않는다
+  assumption: {
+    result: AssumptionResult | 'none';
+    note: string;
+    sameAs: string | null;
+    userResult?: AssumptionResult;
+  };
+  // 복기가 정답지에서 찾은 오류
+  keyProblems: string[];
+}
+export interface ReviewInput {
+  topic: string;
+  interviewer: PanelMember;
+  // 이 질문이 나온 까닭
+  cause: { reactionIntent: ReactionIntentId | null; defect: Defect | null };
+  // 고친 정답지가 반영된 것
+  question: Question;
+  clarifications: { ask: string; reply: string }[];
+  answer: string;
+  // 면접 중 판정
+  analysis: Analysis;
+  // 이 답에서 나온 질문들(0~2개)
+  followUps: {
+    interviewerId: string;
+    addOn: boolean;
+    reactionIntent: ReactionIntentId;
+    defect: Defect;
+    text: string;
+  }[];
+  // 같은 축의 가정들. key는 기억의 id 또는 'turn:<턴 id>'
+  knownAssumptions: { key: string; statement: string }[];
+}
 export interface Clarification {
   ask: string;
   reply: string;

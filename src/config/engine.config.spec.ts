@@ -3,14 +3,20 @@ import { readEngineConfig } from './engine.config';
 describe('readEngineConfig', () => {
   it('기본값은 모든 호출 claude-opus-5-5와 설계 노력 수준', () => {
     const c = readEngineConfig({});
-    expect(Object.values(c.models)).toEqual(Array(4).fill('claude-opus-5-5'));
+    expect(Object.values(c.models)).toEqual(Array(5).fill('claude-opus-5-5'));
     expect(c.effort).toEqual({
       analyze: 'medium',
       question: 'medium',
       verify: 'medium',
       leak: 'low',
+      review: 'high',
     });
     expect([c.maxConsecutive, c.maxRegenerations]).toEqual([2, 1]);
+  });
+  it('review 역할의 기본값은 claude-opus-5-5, high', () => {
+    const c = readEngineConfig({});
+    expect(c.models.review).toBe('claude-opus-5-5');
+    expect(c.effort.review).toBe('high');
   });
   it('question과 verify의 기본 effort는 medium이다', () => {
     const c = readEngineConfig({});

@@ -87,7 +87,13 @@ const turnWithEverything: InterviewTurn = {
     secondary: null,
   },
   surprise: 'unexpected',
-  review: { note: '숨은-복기' },
+  review: {
+    intent: { aimed: true, note: '숨은-복기' },
+    defects: [],
+    reactions: [],
+    assumption: { result: 'none', note: '', sameAs: null },
+    keyProblems: [],
+  },
   createdAt: new Date('2026-11-17T00:00:30.000Z'),
 };
 

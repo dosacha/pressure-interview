@@ -8,6 +8,7 @@ import type {
   Pick,
   PreparedDraft,
   StoredQuestion,
+  TurnReview,
   Verification,
 } from '../interview/types';
 
@@ -75,9 +76,8 @@ export class InterviewTurn {
   @Column({ name: 'surprise', type: 'text', nullable: true })
   surprise!: 'expected' | 'unexpected' | null;
 
-  // Task 10에서 TurnReview | null로 좁힌다.
   @Column({ name: 'review', type: 'jsonb', nullable: true })
-  review!: unknown;
+  review!: TurnReview | null;
 
   @Column({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;

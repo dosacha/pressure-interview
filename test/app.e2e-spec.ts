@@ -2,6 +2,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 
+import { REVIEW_SCHEMA } from '../src/interview/calls/review.call';
 import { createFakeAnthropic, rawText } from './support/fake-anthropic';
 import { resetDb } from './support/reset-db';
 import { createTestApp } from './support/test-app';
@@ -49,12 +50,19 @@ describe('앱 뼈대', () => {
       ['vanishing', 'remaining', 'alternatives', 'keyPoints'],
       ['premiseOk', 'problems'],
       ['premiseOk', 'problems', 'corrections'],
+      REVIEW_SCHEMA.required,
     ]) {
       await fake.client.beta.messages.create({
         output_config: { format: { schema: { required } } },
       });
     }
-    expect(fake.calls.map((c) => c.kind)).toEqual(['question', 'answerKey', 'premise', 'verify']);
+    expect(fake.calls.map((c) => c.kind)).toEqual([
+      'question',
+      'answerKey',
+      'premise',
+      'verify',
+      'review',
+    ]);
   });
 
   it('once가 on보다 먼저 쓰이고 한 번만 쓰인다', async () => {

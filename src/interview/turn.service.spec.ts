@@ -10,6 +10,8 @@ import {
   Question,
   QuestionDraft,
   QuestionInput,
+  ReviewInput,
+  TurnReview,
 } from './types';
 
 // 같은 역할을 쓰는 호출은 스키마 required로 가른다(되묻기 응답과 정답지는 question, 직무 고르기는 analyze,
@@ -369,6 +371,59 @@ describe('TurnService.pickJobRole', () => {
       usage: { input_tokens: 1, output_tokens: 1 },
     });
     expect(calls.map((c) => c.role)).toEqual(['analyze']);
+  });
+});
+
+describe('TurnService.reviewTurn', () => {
+  const defect = { type: 'wrong' as const, axis: 'durability' as const, note: 'n' };
+  const input: ReviewInput = {
+    topic: 'Redis',
+    interviewer: { id: 'p1', role: 'dba', temperament: 'shaker' },
+    cause: { reactionIntent: null, defect: null },
+    question: q('durability'),
+    clarifications: [],
+    answer: '...',
+    analysis: { kind: 'answer', defects: [defect], mentionedTechs: [] },
+    followUps: [{ interviewerId: 'p2', addOn: false, reactionIntent: 'B6', defect, text: 'F' }],
+    knownAssumptions: [{ key: 'turn:t1', statement: 's' }],
+  };
+  const reply = (over: Partial<TurnReview> = {}): TurnReview => ({
+    intent: { aimed: true, note: '' },
+    defects: [],
+    reactions: [],
+    assumption: { result: 'well', note: '', sameAs: 'turn:t1' },
+    keyProblems: [],
+    ...over,
+  });
+  it('reviewTurn은 준 적 없는 sameAs를 null로 바꾼다', async () => {
+    const given = await service({ review: [reply()] });
+    expect((await given.turn.reviewTurn(input)).review.assumption.sameAs).toBe('turn:t1');
+    const { turn, calls } = await service({
+      review: [reply({ assumption: { result: 'well', note: '', sameAs: 'turn:없음' } })],
+    });
+    const r = await turn.reviewTurn(input);
+    expect(r.review.assumption).toEqual({ result: 'well', note: '', sameAs: null });
+    expect(calls.map((c) => c.role)).toEqual(['review']);
+    expect(r.usage).toEqual({ input_tokens: 1, output_tokens: 1 });
+  });
+  it('reviewTurn은 범위 밖 index의 defects와 reactions를 버린다', async () => {
+    const { turn } = await service({
+      review: [
+        reply({
+          defects: [
+            { index: 0, verdict: 'valid', note: 'd0' },
+            { index: 5, verdict: 'misjudged', note: 'd5' },
+          ],
+          reactions: [
+            { index: 5, verdict: 'misjudgment', note: 'r5' },
+            { index: 0, verdict: 'valid_point', note: 'r0' },
+          ],
+        }),
+      ],
+    });
+    const r = await turn.reviewTurn(input);
+    expect(r.review.defects).toEqual([{ index: 0, verdict: 'valid', note: 'd0' }]);
+    expect(r.review.reactions).toEqual([{ index: 0, verdict: 'valid_point', note: 'r0' }]);
   });
 });
 
