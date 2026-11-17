@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:18.4-alpine
+    restart: 'no'
+    environment:
+      POSTGRES_DB: interview_e2e
+      POSTGRES_USER: interview_e2e
+      POSTGRES_PASSWORD: interview_e2e_local
+    ports:
+      - '127.0.0.1::5432'
+    volumes:
+      - postgres_e2e_data:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U interview_e2e -d interview_e2e
+      interval: 1s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  postgres_e2e_data:

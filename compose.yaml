@@ -1,0 +1,26 @@
+name: pressure-interview
+
+services:
+  db:
+    image: postgres:18.4-alpine
+    container_name: pressure-interview-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-interview}
+      POSTGRES_USER: ${DB_USERNAME:-interview}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-interview_local}
+    ports:
+      # 이 PC의 127.0.0.1에만 연다. 주소를 빼면 같은 망의 다른 기기에서도 기본 비밀번호로 닿는다.
+      - "127.0.0.1:${DB_PORT:-5436}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${DB_USERNAME:-interview} -d ${DB_DATABASE:-interview}
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
