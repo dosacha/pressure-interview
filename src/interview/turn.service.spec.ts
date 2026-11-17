@@ -425,6 +425,25 @@ describe('TurnService.reviewTurn', () => {
     expect(r.review.defects).toEqual([{ index: 0, verdict: 'valid', note: 'd0' }]);
     expect(r.review.reactions).toEqual([{ index: 0, verdict: 'valid_point', note: 'r0' }]);
   });
+  it('reviewTurn은 같은 index가 두 번 오면 처음 것만 남긴다', async () => {
+    const { turn } = await service({
+      review: [
+        reply({
+          defects: [
+            { index: 0, verdict: 'valid', note: 'first' },
+            { index: 0, verdict: 'misjudged', note: 'second' },
+          ],
+          reactions: [
+            { index: 0, verdict: 'valid_point', note: 'first' },
+            { index: 0, verdict: 'misjudgment', note: 'second' },
+          ],
+        }),
+      ],
+    });
+    const r = await turn.reviewTurn(input);
+    expect(r.review.defects).toEqual([{ index: 0, verdict: 'valid', note: 'first' }]);
+    expect(r.review.reactions).toEqual([{ index: 0, verdict: 'valid_point', note: 'first' }]);
+  });
 });
 
 describe('TurnService.handleAnswer', () => {

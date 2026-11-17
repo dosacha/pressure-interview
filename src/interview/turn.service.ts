@@ -157,13 +157,20 @@ export class TurnService {
   // 모델이 없는 결함·질문·가정을 가리켜도 뒤 단계가 흔들리지 않게 그런 항목을 버리거나 비운다.
   async reviewTurn(input: ReviewInput): Promise<{ review: TurnReview; usage: TokenUsage }> {
     const { data, usage } = await reviewTurn(this.llm, input);
-    const inRange = (index: number, length: number) => index >= 0 && index < length;
+    // 범위 밖 index와, 같은 index의 둘째부터는 버린다. 뒤 단계가 index로 결함과 질문을 찾기 때문이다.
+    const valid = <T extends { index: number }>(items: T[], length: number): T[] =>
+      items.filter(
+        (item, i) =>
+          item.index >= 0 &&
+          item.index < length &&
+          items.findIndex((x) => x.index === item.index) === i,
+      );
     const { sameAs } = data.assumption;
     return {
       review: {
         ...data,
-        defects: data.defects.filter((d) => inRange(d.index, input.analysis.defects.length)),
-        reactions: data.reactions.filter((r) => inRange(r.index, input.followUps.length)),
+        defects: valid(data.defects, input.analysis.defects.length),
+        reactions: valid(data.reactions, input.followUps.length),
         assumption: {
           ...data.assumption,
           sameAs: input.knownAssumptions.some((a) => a.key === sameAs) ? sameAs : null,
