@@ -118,21 +118,39 @@ describe('question.call', () => {
     });
     const avoid =
       '지원자가 모른다고 한 기술(질문에 다시 넣지 않는다. 전제로도 쓰지 않는다): Memcached, Lua';
-    const addOn = '- 덧붙이는 질문이다. "저도 하나 덧붙이면"처럼 시작한다.';
+    const addOn =
+      '- 덧붙이는 질문이다. 다른 면접관이 먼저 물었고 지원자가 거기에 답한 뒤에, "저도 하나 덧붙이면"처럼 시작해 얹는다. 이 질문이 반응하는 답변은 바로 앞 답변이 아니라 그 앞의 답변(대화 목록의 끝에서 두 번째)이다.';
     expect(user).toContain(avoid);
-    expect(user).toContain(addOn);
+    expect(user).toContain(`이번 질문:
+${addOn}
+`);
     const order = [
       '지원자가 지금까지 말한 기술',
       avoid,
       '기억(이전 면접들에서 만난 가정):',
       '이번 질문:',
-      '- 직전 답변의 결함',
       addOn,
+      '- 반응 의도',
+      '- 그 앞의 답변의 결함',
     ].map((s) => user.indexOf(s));
     expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(user).toContain('그 앞의 답변에 이 의도로 반응한다');
+    expect(user).toContain('그 앞의 답변의 결함');
+    expect(user).not.toContain('직전 답변에 이 의도로 반응한다');
+    expect(user).not.toContain('직전 답변의 결함');
     const plain = buildQuestionPrompt(input).user;
     expect(plain).not.toContain('모른다고 한 기술');
     expect(plain).not.toContain('덧붙이는 질문');
+    for (const u of [plain, buildQuestionPrompt({ ...input, addOn: false }).user]) {
+      expect(u).toContain('직전 답변에 이 의도로 반응한다');
+      expect(u).toContain('직전 답변의 결함');
+      expect(u).not.toContain('그 앞의 답변');
+    }
+  });
+  it('시스템 프롬프트가 덧붙이는 질문의 직전 답변을 그 앞의 답변으로 읽게 한다', () => {
+    expect(buildQuestionPrompt(input).system).toContain(
+      'user 메시지가 덧붙이는 질문이라고 하면, 이 프롬프트에서 직전 답변이라고 한 곳은 모두 user 메시지가 가리키는 그 앞의 답변을 뜻한다.',
+    );
   });
   it('지원자가 말한 기술이 비어도 모른다고 한 기술 줄과 기억 절은 들어간다', () => {
     const { user } = buildQuestionPrompt({

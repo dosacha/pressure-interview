@@ -157,7 +157,7 @@ user 메시지에 당신의 직무와 성향이 있다. 직무는 당신이 주�
 
 ${listIntents(QUESTION_INTENTS, QUESTION_INTENT_DEFS)}
 
-반응 의도가 주어지면 질문은 그 반응 의도로 직전 답변에 반응한다.
+반응 의도가 주어지면 질문은 그 반응 의도로 직전 답변에 반응한다. user 메시지가 덧붙이는 질문이라고 하면, 이 프롬프트에서 직전 답변이라고 한 곳은 모두 user 메시지가 가리키는 그 앞의 답변을 뜻한다. 다른 면접관이 같은 답변에 먼저 반응했고, 당신은 그 답변의 다른 결함에 반응하기 때문이다.
 
 ${listIntents(REACTION_INTENTS, REACTION_INTENT_DEFS)}
 
@@ -249,6 +249,12 @@ ${Object.entries(ANSWER_KEY_SCHEMA.properties)
   }
 
   const turn: string[] = [];
+  if (input.addOn) {
+    turn.push(
+      '- 덧붙이는 질문이다. 다른 면접관이 먼저 물었고 지원자가 거기에 답한 뒤에, "저도 하나 덧붙이면"처럼 시작해 얹는다. 이 질문이 반응하는 답변은 바로 앞 답변이 아니라 그 앞의 답변(대화 목록의 끝에서 두 번째)이다.',
+    );
+  }
+  const answer = input.addOn ? '그 앞의 답변' : '직전 답변';
   if (input.history.length === 0 && input.reactionIntent === null) {
     turn.push(
       '- 이번이 면접의 첫 질문이다. 사회자가 없으므로 면접을 여는 것도 당신이다. 반응할 직전 답변이 없으니 주제에서 출발해 묻는다.' +
@@ -259,18 +265,13 @@ ${Object.entries(ANSWER_KEY_SCHEMA.properties)
   }
   if (input.reactionIntent !== null) {
     turn.push(
-      `- 반응 의도: ${input.reactionIntent} ${REACTION_INTENTS[input.reactionIntent]}. 직전 답변에 이 의도로 반응한다.`,
+      `- 반응 의도: ${input.reactionIntent} ${REACTION_INTENTS[input.reactionIntent]}. ${answer}에 이 의도로 반응한다.`,
     );
   }
   if (input.defect !== null) {
     const note = input.defect.note ? `. ${input.defect.note}` : '';
     turn.push(
-      `- 직전 답변의 결함: ${DEFECT_NAMES[input.defect.type]}(관련 축: ${axisName(input.defect.axis)})${note}`,
-    );
-  }
-  if (input.addOn) {
-    turn.push(
-      '- 덧붙이는 질문이다. "저도 하나 덧붙이면"처럼 시작한다. 아래 결함은 바로 앞 답변이 아니라 그 앞의 답변(대화 목록의 끝에서 두 번째)에서 나왔다.',
+      `- ${answer}의 결함: ${DEFECT_NAMES[input.defect.type]}(관련 축: ${axisName(input.defect.axis)})${note}`,
     );
   }
   if (input.targetAxis !== null) {
