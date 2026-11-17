@@ -1,21 +1,24 @@
-import { ClarifyInput } from '../types';
+import { AnswerKey, ClarifyInput, Question } from '../types';
 import { CLARIFY_SCHEMA, answerClarification, buildClarifyPrompt } from './clarify.call';
 import { REQUIRED_RULES } from './question.call';
 
+// 되묻기 응답은 정답지를 받지 않는다. 정답지가 붙은 질문이 넘어와도 싣지 않는지 이 값으로 본다.
+const answerKey: AnswerKey = {
+  vanishing: ['읽기 캐시 이점'],
+  remaining: ['단일 스레드 처리'],
+  alternatives: [{ name: 'Cassandra', traits: 'LSM 트리로 쓰기에 강하다' }],
+  keyPoints: ['AOF fsync 비용이 커진다', '복제 지연이 늘어난다'],
+};
+const question: Question = {
+  text: '쓰기가 읽기보다 훨씬 많아지면 지금 구성에서 무엇이 먼저 무너질까요?',
+  questionIntent: 'A3',
+  assumption: { axis: 'distribution', statement: '쓰기 요청이 읽기 요청보다 훨씬 많아진다.' },
+  answerKey,
+};
 const input: ClarifyInput & { feedback: string[] } = {
   topic: 'Redis',
   interviewer: { id: 'p1', role: 'dba', temperament: 'shaker' },
-  question: {
-    text: '쓰기가 읽기보다 훨씬 많아지면 지금 구성에서 무엇이 먼저 무너질까요?',
-    questionIntent: 'A3',
-    assumption: { axis: 'distribution', statement: '쓰기 요청이 읽기 요청보다 훨씬 많아진다.' },
-    answerKey: {
-      vanishing: ['읽기 캐시 이점'],
-      remaining: ['단일 스레드 처리'],
-      alternatives: [{ name: 'Cassandra', traits: 'LSM 트리로 쓰기에 강하다' }],
-      keyPoints: ['AOF fsync 비용이 커진다', '복제 지연이 늘어난다'],
-    },
-  },
+  question,
   questionTechs: [],
   exchanges: [
     { ask: '첫째 되묻기입니다', reply: '첫째 답입니다' },
@@ -30,10 +33,7 @@ const input: ClarifyInput & { feedback: string[] } = {
 describe('clarify.call', () => {
   it('정답지와 질문 의도를 프롬프트에 싣지 않는다', () => {
     const { system, user } = buildClarifyPrompt(input);
-    for (const hidden of [
-      ...input.question.answerKey.keyPoints,
-      input.question.answerKey.alternatives[0].name,
-    ]) {
+    for (const hidden of [...answerKey.keyPoints, answerKey.alternatives[0].name]) {
       expect(system + user).not.toContain(hidden);
     }
     expect(user).not.toContain(`${input.question.questionIntent} `);

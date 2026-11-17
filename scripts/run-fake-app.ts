@@ -47,7 +47,6 @@ async function main(): Promise<void> {
         assumption: withAssumption
           ? { axis: 'scale', statement: '트래픽이 열 배로 늘어난다' }
           : { axis: 'none', statement: '' },
-        answerKey: { vanishing: [], remaining: [], alternatives: [], keyPoints: ['k1'] },
       };
     });
     const app = await createTestApp(fake);

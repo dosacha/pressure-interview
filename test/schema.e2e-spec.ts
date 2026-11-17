@@ -73,7 +73,7 @@ describe('면접 스키마', () => {
       turns.create({ sessionId: s.id, seq: 1, interviewerId: 'p1', question, prepared }),
     );
     const read = await turns.findOneByOrFail({ id: t.id });
-    expect(read.question.answerKey.keyPoints).toEqual(question.answerKey.keyPoints);
+    expect(read.question.answerKey?.keyPoints).toEqual(question.answerKey.keyPoints);
     expect(read.clarifications).toEqual([]);
     expect(read.addOn).toBe(false);
     expect(read.causeTurnId).toBeNull();

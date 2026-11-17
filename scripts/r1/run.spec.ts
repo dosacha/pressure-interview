@@ -3,29 +3,37 @@ import { AXES, ROLES, TEMPERAMENTS } from '../../src/interview/catalog';
 import { JsonLlm, JsonRequest, RefusalError } from '../../src/interview/llm/llm.service';
 import type {
   AnswerInput,
+  AnswerKey,
+  AnswerKeyInput,
   AnswerResult,
+  CompletedQuestion,
   Pick as EnginePick,
-  PreparedQuestion,
-  Question,
+  PreparedDraft,
+  QuestionDraft,
   QuestionInput,
-  Verification,
 } from '../../src/interview/types';
 import { AnswerKind, CANDIDATE_SCHEMA } from './candidate';
 import { readScenarios, runScenarios, Scenario } from './run';
 
-const question = (axis: Question['assumption']['axis'], text: string): Question => ({
+const draft = (axis: QuestionDraft['assumption']['axis'], text: string): QuestionDraft => ({
   text,
   questionIntent: 'A1',
   assumption: { axis, statement: 's' },
-  answerKey: { vanishing: [], remaining: [], alternatives: [], keyPoints: ['k'] },
 });
-const prepared = (axis: Question['assumption']['axis'], text: string): PreparedQuestion => ({
-  question: question(axis, text),
-  verification: null,
-  answerKeyCorrected: false,
+const prepared = (axis: QuestionDraft['assumption']['axis'], text: string): PreparedDraft => ({
+  draft: draft(axis, text),
+  premise: null,
   flags: { leak: false, premise: false },
   attempts: [],
   usage: [{ input_tokens: 1, output_tokens: 1 }],
+});
+const KEY: AnswerKey = { vanishing: [], remaining: [], alternatives: [], keyPoints: ['k'] };
+// 받은 초안에 정답지를 붙여 돌려준다. usage는 호출 하나로 센다.
+const completedFor = (input: AnswerKeyInput, answerKey: AnswerKey = KEY): CompletedQuestion => ({
+  question: { ...input.draft, answerKey },
+  verification: { premiseOk: true, problems: [], answerKey },
+  answerKeyCorrected: false,
+  usage: [{ input_tokens: 3, output_tokens: 3 }],
 });
 const pick: EnginePick = {
   interviewerId: 'p2',
@@ -50,48 +58,43 @@ const scenario = (id: string, kinds: AnswerKind[]): Scenario => ({
   first: { interviewerId: 'p1', targetAxis: 'identity_swap' },
   answers: kinds.map((kind) => ({ kind })),
 });
-const lateVerification: Verification = {
-  premiseOk: true,
-  problems: [],
-  answerKey: { vanishing: [], remaining: [], alternatives: [], keyPoints: ['late'] },
-};
 
-// 가짜 llm은 스키마로 지원자 답 호출과 사후 검증 호출을 가른다.
+// 가짜 llm은 지원자 답 호출만 받는다(정답지 작성과 검증은 completeQuestion 안에서 돈다).
 // 지원자 답 n번째 호출은 '생성된 답 n'과 '결함 n'을 돌려주고, candidateFailAt번째 호출은 던진다.
-function fakes(
-  opts: { verifyError?: Error; verification?: Verification; candidateFailAt?: number } = {},
-) {
-  const prepareQuestion = jest.fn<Promise<PreparedQuestion>, [QuestionInput]>();
+function fakes(opts: { candidateFailAt?: number } = {}) {
+  const prepareDraft = jest.fn<Promise<PreparedDraft>, [QuestionInput]>();
+  const completeQuestion = jest.fn<Promise<CompletedQuestion>, [AnswerKeyInput]>();
+  completeQuestion.mockImplementation((input) => Promise.resolve(completedFor(input)));
   const handleAnswer = jest.fn<Promise<AnswerResult>, [AnswerInput]>();
-  const verifyCalls: JsonRequest[] = [];
   const candidateCalls: JsonRequest[] = [];
   const logs: string[] = [];
   const llm: JsonLlm = {
     callJson<T>(req: JsonRequest) {
-      let data: unknown;
-      let usage = { input_tokens: 5, output_tokens: 5 };
-      if (req.schema === CANDIDATE_SCHEMA) {
-        candidateCalls.push(req);
-        const n = candidateCalls.length;
-        if (n === opts.candidateFailAt) return Promise.reject(new Error('답 생성 실패'));
-        data = { answer: `생성된 답 ${n}`, intendedFlaw: `결함 ${n}` };
-        usage = { input_tokens: 7, output_tokens: 7 };
-      } else {
-        verifyCalls.push(req);
-        if (opts.verifyError) return Promise.reject(opts.verifyError);
-        data = opts.verification ?? lateVerification;
-      }
-      return Promise.resolve({ data: data as T, usage, model: 'm' });
+      if (req.schema !== CANDIDATE_SCHEMA)
+        return Promise.reject(new Error('지원자 답 호출이 아니다'));
+      candidateCalls.push(req);
+      const n = candidateCalls.length;
+      if (n === opts.candidateFailAt) return Promise.reject(new Error('답 생성 실패'));
+      const data = { answer: `생성된 답 ${n}`, intendedFlaw: `결함 ${n}` };
+      return Promise.resolve({
+        data: data as T,
+        usage: { input_tokens: 7, output_tokens: 7 },
+        model: 'm',
+      });
     },
   };
-  const deps = { turn: { prepareQuestion, handleAnswer }, llm, log: (l: string) => logs.push(l) };
-  return { deps, prepareQuestion, handleAnswer, verifyCalls, candidateCalls, logs };
+  const deps = {
+    turn: { prepareDraft, completeQuestion, handleAnswer },
+    llm,
+    log: (l: string) => logs.push(l),
+  };
+  return { deps, prepareDraft, completeQuestion, handleAnswer, candidateCalls, logs };
 }
 
 describe('runScenarios', () => {
   it('거절로 실패한 시나리오는 error를 남기고, 다음 시나리오는 끝까지 돈다', async () => {
     const f = fakes();
-    f.prepareQuestion
+    f.prepareDraft
       .mockRejectedValueOnce(new RefusalError('cyber'))
       .mockResolvedValue(prepared('identity_swap', 'Q'));
     f.handleAnswer.mockResolvedValue(answered(pick));
@@ -107,20 +110,21 @@ describe('runScenarios', () => {
 
   it('답 처리 중 오류가 나면 첫 질문과 끝난 후속은 남기고 error에 메시지를 넣는다', async () => {
     const f = fakes();
-    f.prepareQuestion.mockResolvedValue(prepared('identity_swap', 'Q'));
+    f.prepareDraft.mockResolvedValue(prepared('identity_swap', 'Q'));
     f.handleAnswer.mockResolvedValueOnce(answered(pick)).mockRejectedValueOnce(new Error('boom'));
     const [r] = await runScenarios(f.deps, [scenario('a', ['good', 'vague', 'wrong'])]);
-    expect(r.first?.prepared.question.text).toBe('Q');
+    expect(r.first?.prepared.draft.text).toBe('Q');
     expect(r.followUps).toHaveLength(1);
     expect(r.error).toBe('boom');
     expect(r.usage.length).toBeGreaterThan(0);
-    // 첫 질문 1 + 답 1의 답 생성 1·분석 1·후속 질문 1 + 답 2의 답 생성 1. 실패한 답 2의 분석은 사용량이 없다.
-    expect(r.usage).toHaveLength(5);
+    // 첫 질문 1·정답지 1 + 답 1의 답 생성 1·분석 1·후속 질문 1·정답지 1 + 답 2의 답 생성 1.
+    // 실패한 답 2의 분석은 사용량이 없다.
+    expect(r.usage).toHaveLength(7);
   });
 
   it('후속 질문 생성이 실패해도 그 답의 analysis와 pick은 남는다', async () => {
     const f = fakes();
-    f.prepareQuestion
+    f.prepareDraft
       .mockResolvedValueOnce(prepared('identity_swap', 'Q'))
       .mockRejectedValueOnce(new Error('후속 실패'));
     f.handleAnswer.mockResolvedValue(answered(pick));
@@ -132,19 +136,21 @@ describe('runScenarios', () => {
     expect(r.followUps[0].next).toBeNull();
   });
 
-  it('사후 검증이 실패해도 첫 질문의 prepared는 남는다', async () => {
-    const f = fakes({ verifyError: new Error('검증 실패') });
-    f.prepareQuestion.mockResolvedValue(prepared('none', '기본 질문'));
+  it('정답지 작성이나 검증이 실패해도 첫 질문의 초안은 남는다', async () => {
+    const f = fakes();
+    f.prepareDraft.mockResolvedValue(prepared('none', '기본 질문'));
+    f.completeQuestion.mockReset().mockRejectedValue(new Error('검증 실패'));
     const [r] = await runScenarios(f.deps, [scenario('a', ['good'])]);
     expect(r.error).toBe('검증 실패');
-    expect(r.first?.prepared.question.text).toBe('기본 질문');
-    expect(r.first?.lateVerification).toBeNull();
-    expect(f.logs).toContain('[a] 첫 질문 사후 검증');
+    expect(r.first?.prepared.draft.text).toBe('기본 질문');
+    expect(r.first?.completed).toBeNull();
+    expect(f.logs).toContain('[a] 첫 질문 정답지 작성과 검증');
+    expect(f.handleAnswer).not.toHaveBeenCalled();
   });
 
   it('후속 질문의 입력을 pick과 handleAnswer 결과로 조립한다', async () => {
     const f = fakes();
-    f.prepareQuestion.mockResolvedValue(prepared('identity_swap', '첫 질문'));
+    f.prepareDraft.mockResolvedValue(prepared('identity_swap', '첫 질문'));
     f.handleAnswer.mockResolvedValue(answered(pick));
     const [r] = await runScenarios(f.deps, [scenario('a', ['good'])]);
     expect(r.first?.askedBy).toBe('p1');
@@ -155,7 +161,7 @@ describe('runScenarios', () => {
       answer: '생성된 답 1',
       userMentioned: ['Redis'],
     });
-    const next = f.prepareQuestion.mock.calls[1][0];
+    const next = f.prepareDraft.mock.calls[1][0];
     expect(next.interviewer).toEqual({ id: 'p2', role: 'textbook', temperament: 'persistent' });
     expect(next.reactionIntent).toBe('B6');
     expect(next.defect).toEqual(pick.defect);
@@ -166,45 +172,63 @@ describe('runScenarios', () => {
 
   it('후속 질문에 모른다고 한 기술을 avoidTechs로 넘긴다', async () => {
     const f = fakes();
-    f.prepareQuestion.mockResolvedValue(prepared('identity_swap', '첫 질문'));
+    f.prepareDraft.mockResolvedValue(prepared('identity_swap', '첫 질문'));
     f.handleAnswer.mockResolvedValue({ ...answered(pick), unknownTechs: ['Memcached'] });
     await runScenarios(f.deps, [scenario('a', ['unknown'])]);
-    expect(f.prepareQuestion.mock.calls[0][0].avoidTechs).toBeUndefined();
-    expect(f.prepareQuestion.mock.calls[1][0].avoidTechs).toEqual(['Memcached']);
+    expect(f.prepareDraft.mock.calls[0][0].avoidTechs).toBeUndefined();
+    expect(f.prepareDraft.mock.calls[1][0].avoidTechs).toEqual(['Memcached']);
   });
 
-  it('가정이 없는 질문에서만 lateVerification을 채운다', async () => {
+  it('질문마다 초안과 턴 정보로 completeQuestion을 부르고 결과를 step에 남긴다', async () => {
     const f = fakes();
-    f.prepareQuestion
+    f.prepareDraft
       .mockResolvedValueOnce(prepared('none', '기본 질문'))
       .mockResolvedValueOnce(prepared('identity_swap', '가정 질문'));
     f.handleAnswer.mockResolvedValue(answered(pick));
     const [r] = await runScenarios(f.deps, [scenario('a', ['good'])]);
-    expect(r.first?.lateVerification).toEqual(lateVerification);
-    expect(r.followUps[0].next?.lateVerification).toBeNull();
-    expect(f.verifyCalls.map((c) => c.role)).toEqual(['verify']);
-    expect(r.usage).toContainEqual({ input_tokens: 5, output_tokens: 5 });
+    expect(f.completeQuestion).toHaveBeenCalledTimes(2);
+    const [first, next] = f.completeQuestion.mock.calls.map(([c]) => c);
+    expect(first).toEqual({
+      topic: 'Redis',
+      interviewer: { id: 'p1', role: 'dba', temperament: 'shaker' },
+      reactionIntent: null,
+      defect: null,
+      addOn: undefined,
+      history: [],
+      draft: draft('none', '기본 질문'),
+    });
+    expect(next).toMatchObject({
+      interviewer: { id: 'p2' },
+      reactionIntent: 'B6',
+      defect: pick.defect,
+      history: [{ interviewerId: 'p1', text: '기본 질문', answer: '생성된 답 1' }],
+      draft: draft('identity_swap', '가정 질문'),
+    });
+    expect(r.first?.completed?.question.answerKey).toEqual(KEY);
+    expect(r.followUps[0].next?.completed?.question.text).toBe('가정 질문');
+    expect(r.usage).toContainEqual({ input_tokens: 3, output_tokens: 3 });
   });
 
   it('pick이 null이면 next가 null이고 후속 질문을 만들지 않는다', async () => {
     const f = fakes();
-    f.prepareQuestion.mockResolvedValue(prepared('identity_swap', 'Q'));
+    f.prepareDraft.mockResolvedValue(prepared('identity_swap', 'Q'));
     f.handleAnswer.mockResolvedValue(answered(null));
     const [r] = await runScenarios(f.deps, [scenario('a', ['good'])]);
     expect(r.followUps[0].next).toBeNull();
-    expect(f.prepareQuestion).toHaveBeenCalledTimes(1);
+    expect(f.prepareDraft).toHaveBeenCalledTimes(1);
+    expect(f.completeQuestion).toHaveBeenCalledTimes(1);
   });
 
   it('거절의 category가 null이면 카테고리 없음으로 적는다', async () => {
     const f = fakes();
-    f.prepareQuestion.mockRejectedValueOnce(new RefusalError(null));
+    f.prepareDraft.mockRejectedValueOnce(new RefusalError(null));
     const [r] = await runScenarios(f.deps, [scenario('a', ['good'])]);
     expect(r.error).toBe('refusal: 카테고리 없음');
   });
 
   it('지정한 축을 step에 남기고, 전체 답 수를 결과에 남긴다', async () => {
     const f = fakes();
-    f.prepareQuestion.mockResolvedValue(prepared('identity_swap', 'Q'));
+    f.prepareDraft.mockResolvedValue(prepared('identity_swap', 'Q'));
     f.handleAnswer.mockResolvedValue(answered(pick));
     const [r] = await runScenarios(f.deps, [scenario('a', ['good', 'vague'])]);
     expect(r.first?.targetAxis).toBe('identity_swap');
@@ -212,16 +236,18 @@ describe('runScenarios', () => {
     expect(r.answerCount).toBe(2);
   });
 
-  it('사후 검증이 정답지를 고치면 그 뒤의 handleAnswer는 고친 정답지를 받는다', async () => {
-    const fixed = { vanishing: [], remaining: [], alternatives: [], keyPoints: ['고침'] };
-    const corrected: Verification = {
-      premiseOk: true,
-      problems: [{ field: 'keyPoints', problem: '틀림' }],
-      answerKey: fixed,
+  it('handleAnswer는 completeQuestion이 돌려준 정답지를 받는다', async () => {
+    const fixed: AnswerKey = {
+      vanishing: [],
+      remaining: [],
+      alternatives: [],
+      keyPoints: ['고침'],
     };
-    const f = fakes({ verification: corrected });
-    const first = prepared('none', '기본 질문');
-    f.prepareQuestion.mockResolvedValue(first);
+    const f = fakes();
+    f.completeQuestion.mockImplementation((input) =>
+      Promise.resolve({ ...completedFor(input, fixed), answerKeyCorrected: true }),
+    );
+    f.prepareDraft.mockResolvedValue(prepared('none', '기본 질문'));
     f.handleAnswer.mockResolvedValue(answered(null));
     const [r] = await runScenarios(f.deps, [scenario('a', ['good', 'vague'])]);
     for (const [call] of f.handleAnswer.mock.calls) {
@@ -229,7 +255,7 @@ describe('runScenarios', () => {
       expect(call.question.text).toBe('기본 질문');
     }
     expect(f.handleAnswer).toHaveBeenCalledTimes(2);
-    expect(r.first?.prepared.question.answerKey.keyPoints).toEqual(['k']);
+    expect(r.first?.completed?.answerKeyCorrected).toBe(true);
     // 정답지가 고쳐져도 지원자에게 주는 질문 문장은 같다.
     expect(f.candidateCalls).toHaveLength(2);
     for (const c of f.candidateCalls) expect(c.user).toContain('기본 질문');
@@ -237,7 +263,7 @@ describe('runScenarios', () => {
 
   it('답마다 지원자 답을 먼저 생성하고, 그 답 문장만 엔진에 넘기며 intendedFlaw는 followUps에만 남긴다', async () => {
     const f = fakes();
-    f.prepareQuestion.mockResolvedValue(prepared('identity_swap', '첫 질문'));
+    f.prepareDraft.mockResolvedValue(prepared('identity_swap', '첫 질문'));
     f.handleAnswer.mockResolvedValue(answered(pick));
     const [r] = await runScenarios(f.deps, [scenario('a', ['good', 'wrong'])]);
     expect(f.candidateCalls.map((c) => c.role)).toEqual(['analyze', 'analyze']);
@@ -256,21 +282,21 @@ describe('runScenarios', () => {
       '생성된 답 1',
       '생성된 답 2',
     ]);
-    expect(f.prepareQuestion.mock.calls.slice(1).map(([c]) => c.history)).toEqual([
+    expect(f.prepareDraft.mock.calls.slice(1).map(([c]) => c.history)).toEqual([
       [{ interviewerId: 'p1', text: '첫 질문', answer: '생성된 답 1' }],
       [{ interviewerId: 'p1', text: '첫 질문', answer: '생성된 답 2' }],
     ]);
-    const engineInputs = JSON.stringify([f.handleAnswer.mock.calls, f.prepareQuestion.mock.calls]);
+    const engineInputs = JSON.stringify([f.handleAnswer.mock.calls, f.prepareDraft.mock.calls]);
     expect(engineInputs).not.toContain('결함 1');
     expect(engineInputs).not.toContain('결함 2');
     expect(r.usage).toContainEqual({ input_tokens: 7, output_tokens: 7 });
-    // 첫 질문 1 + 답마다 답 생성 1·분석 1·후속 질문 1
-    expect(r.usage).toHaveLength(7);
+    // 첫 질문 1·정답지 1 + 답마다 답 생성 1·분석 1·후속 질문 1·정답지 1
+    expect(r.usage).toHaveLength(10);
   });
 
   it('candidateRule을 지원자 답 호출에 넘기고, 없으면 넘기지 않는다', async () => {
     const f = fakes();
-    f.prepareQuestion.mockResolvedValue(prepared('identity_swap', 'Q'));
+    f.prepareDraft.mockResolvedValue(prepared('identity_swap', 'Q'));
     f.handleAnswer.mockResolvedValue(answered(null));
     await runScenarios(f.deps, [
       { ...scenario('a', ['good']), candidateRule: '다른 기술 이름은 말하지 않는다' },
@@ -282,10 +308,10 @@ describe('runScenarios', () => {
 
   it('지원자 답 호출이 던지면 first와 끝난 followUps를 남기고 error를 채운다', async () => {
     const f = fakes({ candidateFailAt: 2 });
-    f.prepareQuestion.mockResolvedValue(prepared('identity_swap', 'Q'));
+    f.prepareDraft.mockResolvedValue(prepared('identity_swap', 'Q'));
     f.handleAnswer.mockResolvedValue(answered(pick));
     const [r] = await runScenarios(f.deps, [scenario('a', ['good', 'vague', 'wrong'])]);
-    expect(r.first?.prepared.question.text).toBe('Q');
+    expect(r.first?.prepared.draft.text).toBe('Q');
     expect(r.followUps).toHaveLength(1);
     expect(r.followUps[0].answer).toBe('생성된 답 1');
     expect(r.error).toBe('답 생성 실패');

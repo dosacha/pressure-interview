@@ -8,7 +8,14 @@ import { DataSource, type Repository } from 'typeorm';
 import { interviewConfig } from '../config/interview.config';
 import { UsageRecorder } from '../interview/llm/usage-recorder';
 import { TurnService } from '../interview/turn.service';
-import type { Question, QuestionMemory, Verification } from '../interview/types';
+import type {
+  AnswerKeyInput,
+  CompletedQuestion,
+  QuestionDraft,
+  QuestionInput,
+  QuestionMemory,
+  StoredQuestion,
+} from '../interview/types';
 import { InterviewSession } from './interview-session.entity';
 import { InterviewTurn } from './interview-turn.entity';
 import { toInterviewView, type InterviewView } from './interview.view';
@@ -22,13 +29,31 @@ export interface MemorySource {
   snapshot(now: Date): Promise<QuestionMemory>;
 }
 
+// 질문과 정답지 호출에 넘기는 대화: 답한 턴마다 질문 문장과 되묻기 기록, 답.
+function historyOf(turns: InterviewTurn[]): QuestionInput['history'] {
+  return turns
+    .filter((t) => t.answer !== null)
+    .map((t) => ({
+      interviewerId: t.interviewerId,
+      text:
+        t.question.text +
+        t.clarifications.map((c) => `\n(되묻기) 지원자: ${c.ask} / 면접관: ${c.reply}`).join(''),
+      answer: t.answer!,
+    }));
+}
+
+// 저장된 질문에서 정답지를 뺀 초안.
+function draftOf(q: StoredQuestion): QuestionDraft {
+  return { text: q.text, questionIntent: q.questionIntent, assumption: q.assumption };
+}
+
 @Injectable()
 export class InterviewService {
   private readonly logger = new Logger(InterviewService.name);
   // shortcut: 프로세스 하나를 전제한다, 서버를 여러 개 띄우게 되면 DB 잠금으로
   private readonly locks = new Map<string, Promise<unknown>>();
-  // 진행 중인 백그라운드 사후 검증. 값은 거부되지 않는다(실패는 로그만 남긴다).
-  private readonly verifying = new Map<string, Promise<void>>();
+  // 턴 id별로 진행 중인 뒤 작업(정답지 작성과 검증). 값은 거부되지 않는다(실패는 로그만 남긴다).
+  private readonly completing = new Map<string, Promise<void>>();
 
   constructor(
     @InjectRepository(InterviewSession) private readonly sessions: Repository<InterviewSession>,
@@ -52,7 +77,7 @@ export class InterviewService {
         const { role } = await this.engine.pickJobRole(topic);
         const panel = composePanel(role, this.rng);
         const opener = pickOpener(panel, this.rng);
-        const prepared = await this.engine.prepareQuestion({
+        const prepared = await this.engine.prepareDraft({
           topic,
           interviewer: opener,
           reactionIntent: null,
@@ -94,17 +119,12 @@ export class InterviewService {
         reactionIntent: null,
         defect: null,
         targetAxis: null,
-        question: prepared.question,
-        prepared: {
-          flags: prepared.flags,
-          answerKeyCorrected: prepared.answerKeyCorrected,
-          attempts: prepared.attempts,
-        },
-        verification: prepared.verification,
+        question: { ...prepared.draft, answerKey: null },
+        prepared: { flags: prepared.flags, answerKeyCorrected: false, attempts: prepared.attempts },
+        verification: null,
       });
     });
-    if (prepared.question.assumption.axis === 'none')
-      this.startLateVerification(id, topic, turnId, prepared.question);
+    this.startCompletion(id, turnId);
     return this.getView(id);
   }
 
@@ -171,9 +191,9 @@ export class InterviewService {
     }));
   }
 
-  /** 테스트용: 진행 중인 백그라운드 사후 검증이 모두 끝날 때까지 기다린다. */
+  /** 테스트용: 진행 중인 뒤 작업(정답지 작성과 검증)이 모두 끝날 때까지 기다린다. */
   async settle(): Promise<void> {
-    while (this.verifying.size > 0) await Promise.all([...this.verifying.values()]);
+    while (this.completing.size > 0) await Promise.all([...this.completing.values()]);
   }
 
   // 본체: DB를 보고 빠진 단계를 한다. 할 일이 있었으면 true.
@@ -201,25 +221,27 @@ export class InterviewService {
 
   private async analyze(session: InterviewSession, turns: InterviewTurn[]): Promise<void> {
     let turn = turns[turns.length - 1];
-    // 가정 없는 질문은 분석 전에 사후 검증을 맞춰, 분석이 고친 정답지를 받게 한다.
-    if (turn.question.assumption.axis === 'none' && turn.verification === null) {
-      await this.verifying.get(turn.id);
+    // 분석에는 정답지가 필요하다. 뒤 작업이 돌고 있으면 기다리고, 없거나 실패했으면 지금 만든다.
+    if (turn.question.answerKey === null) {
+      await this.completing.get(turn.id);
       turn = await this.turns.findOneByOrFail({ id: turn.id });
-      if (turn.verification === null) {
-        const { verification } = await this.call(
-          this.engine.verifyLate({ topic: session.topic, question: turn.question }),
+      if (turn.question.answerKey === null) {
+        const completed = await this.call(
+          this.engine.completeQuestion(this.answerKeyInput(session, turns, turn)),
         );
-        await this.applyLateVerification(turn.id, verification);
+        await this.applyCompletion(turn.id, completed);
         turn = await this.turns.findOneByOrFail({ id: turn.id });
       }
     }
+    const { answerKey } = turn.question;
+    if (answerKey === null) throw new Error(`정답지가 없는 질문이다: ${turn.id}`);
     const result = await this.call(
       this.engine.handleAnswer({
         topic: session.topic,
         panel: session.panel,
         history: turns.map((t) => t.interviewerId),
         askedBy: turn.interviewerId,
-        question: turn.question,
+        question: { ...turn.question, answerKey },
         answer: turn.answer!,
         userMentioned: session.userMentioned,
       }),
@@ -243,7 +265,7 @@ export class InterviewService {
       this.engine.replyToClarification({
         topic: session.topic,
         interviewer: this.member(session, turn.interviewerId),
-        question: turn.question,
+        question: draftOf(turn.question),
         questionTechs: turn.prepared.attempts.at(-1)?.techs ?? [],
         exchanges: turn.clarifications.map((c) => ({ ask: c.ask, reply: c.reply })),
         ask,
@@ -277,24 +299,14 @@ export class InterviewService {
       assumptionAxes: turns.map((t) => t.question.assumption.axis),
     });
     const prepared = await this.call(
-      this.engine.prepareQuestion({
+      this.engine.prepareDraft({
         topic: session.topic,
         interviewer: this.member(session, next.choice.interviewerId),
         reactionIntent: next.choice.reactionIntent,
         defect: next.choice.defect,
         addOn: next.addOn,
         targetAxis,
-        history: turns
-          .filter((t) => t.answer !== null)
-          .map((t) => ({
-            interviewerId: t.interviewerId,
-            text:
-              t.question.text +
-              t.clarifications
-                .map((c) => `\n(되묻기) 지원자: ${c.ask} / 면접관: ${c.reply}`)
-                .join(''),
-            answer: t.answer!,
-          })),
+        history: historyOf(turns),
         userMentioned: session.userMentioned,
         avoidTechs: session.unknownTechs,
         memory: session.memory,
@@ -313,51 +325,60 @@ export class InterviewService {
         reactionIntent: next.choice.reactionIntent,
         defect: next.choice.defect,
         targetAxis,
-        question: prepared.question,
-        prepared: {
-          flags: prepared.flags,
-          answerKeyCorrected: prepared.answerKeyCorrected,
-          attempts: prepared.attempts,
-        },
-        verification: prepared.verification,
+        question: { ...prepared.draft, answerKey: null },
+        prepared: { flags: prepared.flags, answerKeyCorrected: false, attempts: prepared.attempts },
+        verification: null,
       });
       await m.update(InterviewSession, session.id, { pendingSecondary: next.pending });
     });
-    if (prepared.question.assumption.axis === 'none')
-      this.startLateVerification(session.id, session.topic, turnId, prepared.question);
+    this.startCompletion(session.id, turnId);
   }
 
-  // 기다리지 않고 시작한다. 실패하면 로그만 남기고, 다음 답 때 분석 전에 다시 돈다.
-  private startLateVerification(
-    sessionId: string,
-    topic: string,
-    turnId: string,
-    question: Question,
-  ): void {
+  // 질문을 보여 준 뒤 정답지 작성과 검증을 기다리지 않고 시작한다. 세션 잠금은 잡지 않는다. 답을 처리하는 쪽이
+  // 잠금을 쥔 채 이 작업을 기다리기 때문이다. 실패하면 로그만 남기고, 답이 왔을 때 분석 전에 다시 만든다.
+  private startCompletion(sessionId: string, turnId: string): void {
     const task = this.recorder
-      .run(sessionId, () => this.engine.verifyLate({ topic, question }))
-      .then(({ verification }) => this.applyLateVerification(turnId, verification))
+      .run(sessionId, async () => {
+        const { session, turns } = await this.load(sessionId);
+        const turn = turns.find((t) => t.id === turnId);
+        if (!turn) throw new Error(`턴이 없다: ${turnId}`);
+        return this.engine.completeQuestion(this.answerKeyInput(session, turns, turn));
+      })
+      .then((completed) => this.applyCompletion(turnId, completed))
       .catch((e: unknown) => {
-        const msg = `사후 검증 실패(턴 ${turnId}): ${e instanceof Error ? e.message : String(e)}`;
+        const msg = `정답지 작성 실패(턴 ${turnId}): ${e instanceof Error ? e.message : String(e)}`;
         if (e instanceof Error) this.logger.warn(msg, e.stack);
         else this.logger.warn(msg);
       })
-      .finally(() => this.verifying.delete(turnId));
-    this.verifying.set(turnId, task);
+      .finally(() => this.completing.delete(turnId));
+    this.completing.set(turnId, task);
   }
 
-  // 사후 검증 결과를 반영하는 곳은 여기 하나다.
-  private async applyLateVerification(turnId: string, verification: Verification): Promise<void> {
-    if (verification.problems.length === 0) {
-      await this.turns.update(turnId, { verification });
-      return;
-    }
+  // 정답지 작성과 검증의 결과를 반영하는 곳은 여기 하나다. 그 사이에 저장된 답 등 다른 컬럼은 건드리지 않는다.
+  private async applyCompletion(turnId: string, completed: CompletedQuestion): Promise<void> {
     const turn = await this.turns.findOneByOrFail({ id: turnId });
     await this.turns.update(turnId, {
-      verification,
-      question: { ...turn.question, answerKey: verification.answerKey },
-      prepared: { ...turn.prepared, answerKeyCorrected: true },
+      question: { ...turn.question, answerKey: completed.question.answerKey },
+      verification: completed.verification,
+      prepared: { ...turn.prepared, answerKeyCorrected: completed.answerKeyCorrected },
     });
+  }
+
+  // 정답지 호출의 입력은 턴 행에서 만든다. 서버가 다시 떠도 메모리에 남은 것 없이 같은 입력이 나온다.
+  private answerKeyInput(
+    session: InterviewSession,
+    turns: InterviewTurn[],
+    turn: InterviewTurn,
+  ): AnswerKeyInput {
+    return {
+      topic: session.topic,
+      interviewer: this.member(session, turn.interviewerId),
+      reactionIntent: turn.reactionIntent,
+      defect: turn.defect,
+      addOn: turn.addOn,
+      history: historyOf(turns.filter((t) => t.seq < turn.seq)),
+      draft: draftOf(turn.question),
+    };
   }
 
   private locked<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {

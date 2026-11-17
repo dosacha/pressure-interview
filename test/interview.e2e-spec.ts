@@ -26,13 +26,15 @@ const question = (over: object = {}) => ({
   text: '기본 질문입니다.',
   questionIntent: 'A1',
   assumption: { axis: 'none', statement: '' },
-  answerKey: { vanishing: [], remaining: [], alternatives: [], keyPoints: ['k1'] },
   ...over,
 });
-const CORRECTED = {
+// 가짜 클라이언트의 기본 정답지 응답
+const KEY = { vanishing: [], remaining: [], alternatives: [], keyPoints: ['k1'] };
+const NO_CORRECTIONS = { lists: [], alternatives: { changed: false, items: [] } };
+const CORRECTING_VERIFY = {
   premiseOk: true,
   problems: [{ field: 'keyPoints', problem: 'p' }],
-  answerKey: { vanishing: [], remaining: [], alternatives: [], keyPoints: ['고친 핵심'] },
+  corrections: { ...NO_CORRECTIONS, lists: [{ field: 'keyPoints', items: ['고친 핵심'] }] },
 };
 const WITH_SECONDARY = {
   kind: 'answer',
@@ -50,6 +52,12 @@ const tick = () => new Promise((r) => setTimeout(r, 50));
 async function until(cond: () => boolean): Promise<void> {
   for (let i = 0; i < 200 && !cond(); i++) await new Promise((r) => setTimeout(r, 5));
   if (!cond()) throw new Error('조건이 오지 않았다');
+}
+// 다음 한 번의 호출을 붙잡아 둔다. 테스트가 끝나기 전에 release로 풀어야 settle()이 끝난다.
+function hold(f: FakeAnthropic, kind: CallKind, reply: object) {
+  const held = { release: () => {} };
+  f.once(kind, () => new Promise<object>((r) => (held.release = () => r(reply))));
+  return held;
 }
 
 describe('면접 서비스 (e2e)', () => {
@@ -305,56 +313,184 @@ describe('면접 서비스 (e2e)', () => {
     expect(await turnRows(id)).toHaveLength(2);
   });
 
-  it('앱을 다시 띄워도 이어 간다. 끝나지 않은 사후 검증은 답할 때 다시 돈다 (Review Focus 4)', async () => {
-    fake.once('verify', () => new Promise<object>(() => {}));
+  it('질문은 정답지 없이 먼저 나가고, 정답지는 뒤에서 채워진다', async () => {
+    const held = hold(fake, 'answerKey', KEY);
+    const v = await service.start({ topic: 'Redis' });
+    expect(v.turns).toHaveLength(1);
+    expect(v.turns[0].text).toBe('기본 질문입니다.');
+    await until(() => calls('answerKey').length === 1);
+    const [before] = await turnRows(v.id);
+    expect(before.question.answerKey).toBeNull();
+    expect(before.verification).toBeNull();
+    expect(before.prepared.answerKeyCorrected).toBe(false);
+    expect(calls('verify')).toHaveLength(0);
+    held.release();
+    await service.settle();
+    const [after] = await turnRows(v.id);
+    expect(after.question.answerKey?.keyPoints).toEqual(['k1']);
+    expect(after.verification).toEqual({ premiseOk: true, problems: [], answerKey: KEY });
+    expect(after.question.text).toBe('기본 질문입니다.');
+  });
+
+  it('질문을 보여 주기까지 정답지 호출과 검증 호출을 기다리지 않는다', async () => {
     const { id, turnId } = await begin();
-    await until(() => calls('verify').length === 1);
+    // 첫 질문의 정답지는 분석에 필요하므로 끝까지 둔다. 둘째 질문의 정답지 호출만 붙잡는다.
+    await service.settle();
+    const held = hold(fake, 'answerKey', KEY);
+    const v = await service.submitAnswer(id, answer(turnId));
+    expect(v.turns).toHaveLength(2);
+    expect(v.pending).toBe('answer');
+    await until(() => calls('answerKey').length === 2);
+    const rows = await turnRows(id);
+    expect(rows[1].question.answerKey).toBeNull();
+    expect(calls('verify')).toHaveLength(1);
+    held.release();
+    await service.settle();
+    expect((await turnRows(id))[1].question.answerKey?.keyPoints).toEqual(['k1']);
+  });
+
+  it('답이 왔는데 정답지가 아직이면 기다렸다가 분석한다. 정답지 호출은 한 번이다', async () => {
+    const held = hold(fake, 'answerKey', { ...KEY, keyPoints: ['k1', '늦은-핵심'] });
+    const { id, turnId } = await begin();
+    await until(() => calls('answerKey').length === 1);
+    const submitting = service.submitAnswer(id, answer(turnId));
+    await tick();
+    expect(calls('analyze')).toHaveLength(0); // 분석은 진행 중인 정답지 작성을 기다린다
+    held.release();
+    await submitting;
+    const kinds = fake.calls.map((c) => c.kind);
+    const beforeAnalyze = kinds.slice(0, kinds.lastIndexOf('analyze'));
+    expect(beforeAnalyze.filter((k) => k === 'answerKey')).toHaveLength(1);
+    expect(beforeAnalyze.filter((k) => k === 'verify')).toHaveLength(1);
+    expect(userOf(lastCall('analyze'))).toContain('k1');
+    expect(userOf(lastCall('analyze'))).toContain('늦은-핵심');
+  });
+
+  it('앱을 다시 띄운 뒤 답이 오면 정답지를 그때 만든다 (Review Focus 4)', async () => {
+    // 닫힌 앱 쪽 호출이라 끝나지 않게 둔다.
+    fake.once('answerKey', () => new Promise<object>(() => {}));
+    const { id, turnId } = await begin();
+    await until(() => calls('answerKey').length === 1);
     await reopen(createFakeAnthropic());
     const v = await service.submitAnswer(id, answer(turnId));
     const kinds = fake.calls.map((c) => c.kind);
-    expect(kinds.indexOf('verify')).toBeGreaterThanOrEqual(0);
+    expect(kinds.indexOf('answerKey')).toBeGreaterThanOrEqual(0);
+    expect(kinds.indexOf('answerKey')).toBeLessThan(kinds.indexOf('verify'));
     expect(kinds.indexOf('verify')).toBeLessThan(kinds.indexOf('analyze'));
     expect(v.turns).toHaveLength(2);
-    expect((await turnRows(id))[0].verification).not.toBeNull();
+    const [first] = await turnRows(id);
+    expect(first.question.answerKey?.keyPoints).toEqual(['k1']);
+    expect(first.verification).not.toBeNull();
   });
 
-  it('사후 검증이 정답지를 고치면 분석은 고친 정답지를 받고, DB에 고친 정답지가 남는다', async () => {
-    let release!: () => void;
-    fake.once('verify', () => new Promise<object>((r) => (release = () => r(CORRECTED))));
+  it('검증이 정답지를 고치면 분석은 고친 정답지를 받고 DB에 남는다', async () => {
+    const held = hold(fake, 'verify', CORRECTING_VERIFY);
     const { id, turnId } = await begin();
     await until(() => calls('verify').length === 1);
     const submitting = service.submitAnswer(id, answer(turnId));
     await tick();
-    expect(calls('analyze')).toHaveLength(0); // 분석은 진행 중인 사후 검증을 기다린다
-    release();
+    expect(calls('analyze')).toHaveLength(0);
+    held.release();
     await submitting;
-    const kinds = fake.calls.map((c) => c.kind);
-    expect(kinds.filter((k, i) => k === 'verify' && i < kinds.lastIndexOf('analyze'))).toHaveLength(
-      1,
-    );
     expect(userOf(lastCall('analyze'))).toContain('고친 핵심');
     const [first] = await turnRows(id);
     expect(first.prepared.answerKeyCorrected).toBe(true);
-    expect(first.question.answerKey.keyPoints).toEqual(['고친 핵심']);
-    expect(first.verification).toEqual(CORRECTED);
+    expect(first.question.answerKey?.keyPoints).toEqual(['고친 핵심']);
+    expect(first.verification).toEqual({
+      premiseOk: true,
+      problems: CORRECTING_VERIFY.problems,
+      answerKey: { ...KEY, keyPoints: ['고친 핵심'] },
+    });
+    // flags와 attempts는 그대로 남는다.
+    expect(first.prepared.flags).toEqual({ leak: false, premise: false });
+    expect(first.prepared.attempts).toHaveLength(1);
   });
 
-  it('백그라운드 사후 검증이 끝난 뒤 답을 저장해도 검증 결과가 지워지지 않는다', async () => {
+  it('뒤에서 정답지를 반영해도 그 사이에 저장한 답이 지워지지 않는다', async () => {
+    const held = hold(fake, 'answerKey', KEY);
+    const { id, turnId } = await begin();
+    await until(() => calls('answerKey').length === 1);
+    const submitting = service.submitAnswer(id, answer(turnId));
+    await tick();
+    expect((await turnRows(id))[0].answer).toBe('답입니다.');
+    held.release();
+    await submitting;
+    const [first] = await turnRows(id);
+    expect(first.answer).toBe('답입니다.');
+    expect(first.answeredAt).toBeInstanceOf(Date);
+    expect(first.question.answerKey?.keyPoints).toEqual(['k1']);
+    expect(first.verification).not.toBeNull();
+    expect(first.analysis).not.toBeNull();
+  });
+
+  it('백그라운드 검증이 끝난 뒤 답을 저장해도 검증 결과가 지워지지 않는다', async () => {
     const { id, turnId } = await begin();
     await service.settle();
     expect((await turnRows(id))[0].verification).not.toBeNull();
     await service.submitAnswer(id, answer(turnId));
     const [first] = await turnRows(id);
-    expect(first.verification).toEqual({
-      premiseOk: true,
-      problems: [],
-      answerKey: { vanishing: [], remaining: [], alternatives: [], keyPoints: ['k1'] },
-    });
+    expect(first.verification).toEqual({ premiseOk: true, problems: [], answerKey: KEY });
     expect(first.answer).toBe('답입니다.');
     const kinds = fake.calls.map((c) => c.kind);
     expect(kinds.filter((k, i) => k === 'verify' && i < kinds.lastIndexOf('analyze'))).toHaveLength(
       1,
     );
+  });
+
+  it('뒤에서 정답지 작성이 실패하면 로그만 남기고, 답이 왔을 때 다시 만든다', async () => {
+    fake.once('answerKey', new Error('뒤 작업 실패'));
+    const { id, turnId } = await begin();
+    await service.settle();
+    expect((await turnRows(id))[0].question.answerKey).toBeNull();
+    const v = await service.submitAnswer(id, answer(turnId));
+    expect(v.turns).toHaveLength(2);
+    const kinds = fake.calls.map((c) => c.kind);
+    const beforeAnalyze = kinds.slice(0, kinds.lastIndexOf('analyze'));
+    expect(beforeAnalyze.filter((k) => k === 'answerKey')).toHaveLength(2);
+    expect((await turnRows(id))[0].question.answerKey?.keyPoints).toEqual(['k1']);
+  });
+
+  it('답이 온 뒤의 정답지 작성이 실패하면 답은 남고 advance가 정답지부터 이어 간다', async () => {
+    fake.once('answerKey', new Error('뒤 작업 실패'));
+    fake.once('answerKey', new Error('답 뒤 실패'));
+    const { id, turnId } = await begin();
+    await service.settle();
+    await expect(service.submitAnswer(id, answer(turnId))).rejects.toBeInstanceOf(UpstreamError);
+    const [row] = await turnRows(id);
+    expect(row.answer).toBe('답입니다.');
+    expect(row.question.answerKey).toBeNull();
+    expect(row.analysis).toBeNull();
+    expect((await service.getView(id)).pending).toBe('retry');
+    const from = fake.calls.length;
+    const v = await service.advance(id);
+    expect(v.turns).toHaveLength(2);
+    expect(
+      fake.calls
+        .slice(from)
+        .map((c) => c.kind)
+        .slice(0, 3),
+    ).toEqual(['answerKey', 'verify', 'analyze']);
+  });
+
+  it('가정을 바꾼 질문은 전제 검사를 통과한 뒤에 나간다', async () => {
+    const scale = { axis: 'scale', statement: '트래픽이 열 배로 늘어난다' };
+    fake.once('question', question({ text: '틀린 전제의 질문', assumption: scale }));
+    fake.once('premise', {
+      premiseOk: false,
+      problems: [{ field: 'text', problem: '전제-오류-문장' }],
+    });
+    fake.once('question', question({ text: '다시 만든 질문', assumption: scale }));
+    const v = await service.start({ topic: 'Redis' });
+    expect(v.turns.map((t) => t.text)).toEqual(['다시 만든 질문']);
+    expect(calls('premise')).toHaveLength(2);
+    expect(userOf(calls('question')[1])).toContain('전제-오류-문장');
+    await service.settle();
+    const kinds = fake.calls.map((c) => c.kind);
+    // 전제 검사는 턴을 저장하기 전, 정답지 작성은 저장한 뒤에 돈다.
+    expect(kinds.lastIndexOf('premise')).toBeLessThan(kinds.indexOf('answerKey'));
+    const [row] = await turnRows(v.id);
+    expect(row.prepared.attempts.map((a) => a.premise?.premiseOk)).toEqual([false, true]);
+    expect(row.prepared.flags.premise).toBe(false);
   });
 
   it('덧붙이기: secondary가 있으면 다음 질문 뒤에 두 번째 면접관이 addOn으로 묻는다', async () => {
@@ -452,6 +588,22 @@ describe('면접 서비스 (e2e)', () => {
     expect(roles).toEqual(['analyze', 'leak', 'question', 'verify']);
   });
 
+  it('뒤 작업의 정답지·검증 호출도 그 면접의 사용량으로 기록된다', async () => {
+    const usage = app.get(UsageService);
+    const callsOf = async (sessionId: string) => {
+      await service.settle();
+      await usage.flush();
+      const rows = await usage.summarize(sessionId);
+      return Object.fromEntries(rows.map((r) => [r.role, r.calls]));
+    };
+    const { id } = await begin();
+    // 질문 역할: 질문 + 정답지, 검증 역할: 검증. 가정 없는 질문이라 전제 검사는 없다.
+    expect(await callsOf(id)).toEqual({ analyze: 1, leak: 1, question: 2, verify: 1 });
+    await answerLast(id);
+    // 다음 질문에서 시작한 뒤 작업도 같은 면접에 남는다.
+    expect(await callsOf(id)).toEqual({ analyze: 2, leak: 2, question: 4, verify: 2 });
+  });
+
   it('시작이 실패하면 세션은 남지 않고 사용량은 남는다', async () => {
     fake.once('question', new Error('boom'));
     const e = (await service.start({ topic: 'Redis' }).catch((x: unknown) => x)) as UpstreamError;
@@ -484,16 +636,16 @@ describe('면접 서비스 (e2e)', () => {
     expect(typeof list[0].createdAt).toBe('string');
   });
 
-  it('백그라운드 사후 검증이 실패하면 원래 오류의 메시지와 스택을 로그에 남긴다', async () => {
+  it('뒤에서 정답지 작성이 실패하면 원래 오류의 메시지와 스택을 로그에 남긴다', async () => {
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     try {
-      fake.once('verify', new Error('사후검증-실패-4412'));
+      fake.once('answerKey', new Error('정답지-실패-4412'));
       const v = await service.start({ topic: 'Redis' });
       await service.settle();
       const logged = warn.mock.calls.flat().map(String).join(' ');
-      expect(logged).toContain('사후검증-실패-4412');
+      expect(logged).toContain('정답지-실패-4412');
       expect(logged).toContain(v.turns[0].id);
-      expect(warn.mock.calls.some((c) => String(c[1]).includes('Error: 사후검증-실패-4412'))).toBe(
+      expect(warn.mock.calls.some((c) => String(c[1]).includes('Error: 정답지-실패-4412'))).toBe(
         true,
       );
     } finally {

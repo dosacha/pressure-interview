@@ -1,12 +1,19 @@
 import { axisName, QUESTION_INTENTS } from '../catalog';
 import type { JsonLlm } from '../llm/llm.service';
-import type { Question, TokenUsage, Verification } from '../types';
+import type { AnswerKey, Question, TokenUsage, Verification } from '../types';
 import { ANSWER_KEY_SCHEMA } from './question.call';
+
+export interface Corrections {
+  // 고친 필드만. 그 필드의 새 목록 전체
+  lists: { field: 'vanishing' | 'remaining' | 'keyPoints'; items: string[] }[];
+  // 바꿨으면 changed true와 새 목록 전체, 아니면 false와 빈 배열
+  alternatives: { changed: boolean; items: { name: string; traits: string }[] };
+}
 
 export const VERIFY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['premiseOk', 'problems', 'answerKey'],
+  required: ['premiseOk', 'problems', 'corrections'],
   properties: {
     premiseOk: {
       type: 'boolean',
@@ -30,9 +37,56 @@ export const VERIFY_SCHEMA = {
         },
       },
     },
-    answerKey: ANSWER_KEY_SCHEMA,
+    corrections: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['lists', 'alternatives'],
+      properties: {
+        lists: {
+          type: 'array',
+          description: '고치거나 뺀 항목이 있는 목록 필드만. 없으면 빈 배열',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['field', 'items'],
+            properties: {
+              field: {
+                type: 'string',
+                enum: ['vanishing', 'remaining', 'keyPoints'],
+                description: '고친 필드',
+              },
+              items: {
+                type: 'array',
+                items: { type: 'string' },
+                description: '그 필드의 새 목록 전체',
+              },
+            },
+          },
+        },
+        alternatives: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['changed', 'items'],
+          properties: {
+            changed: { type: 'boolean', description: '대안 목록을 고쳤으면 true' },
+            items: {
+              ...ANSWER_KEY_SCHEMA.properties.alternatives,
+              description: 'changed가 true면 대안 목록 전체, false면 빈 배열',
+            },
+          },
+        },
+      },
+    },
   },
 };
+
+// 고친 필드만 바꾼 새 정답지. 같은 필드가 두 번 나오면 뒤의 것을 쓴다.
+export function applyCorrections(key: AnswerKey, corrections: Corrections): AnswerKey {
+  const out: AnswerKey = { ...key };
+  for (const { field, items } of corrections.lists) out[field] = items;
+  if (corrections.alternatives.changed) out.alternatives = corrections.alternatives.items;
+  return out;
+}
 
 function buildVerifyPrompt(input: { topic: string; question: Question }): {
   system: string;
@@ -40,7 +94,7 @@ function buildVerifyPrompt(input: { topic: string; question: Question }): {
 } {
   const system = `당신은 기술 압박 면접에서 면접관이 쓴 질문과 숨은 정답지를 검토하는 검토자다. 질문을 쓴 면접관과는 독립된 사람으로서, 면접관의 판단을 믿고 넘어가지 말고 사실을 하나씩 직접 확인한다. 쓴 사람이 놓친 오류는 같은 관점으로 다시 읽어서는 찾기 어렵기 때문이다.
 
-이 면접은 지원자 한 사람이 혼자 쓰는 연습 도구다. 질문은 지원자 화면에 그대로 나가고, 숨은 정답지는 면접이 끝난 뒤 복기에서 지원자에게 공개된다. 질문의 전제가 틀리면 면접 중에 잘못된 지식이 그대로 보이고, 정답지가 틀리면 지원자가 복기에서 잘못된 지식을 배운다.
+이 면접은 지원자 한 사람이 혼자 쓰는 연습 도구다. 질문은 이미 지원자 화면에 나갔고, 이 검토는 지원자가 답을 쓰는 동안 돈다. 숨은 정답지는 면접이 끝난 뒤 복기에서 지원자에게 공개된다. 정답지가 틀리면 지원자가 복기에서 잘못된 지식을 배운다. 질문의 전제가 틀렸다면 면접 중에 잘못된 지식이 이미 보였으므로, 복기에서 바로잡을 수 있게 기록으로 남긴다.
 
 ## 검사할 것
 
@@ -57,15 +111,17 @@ ${Object.entries(ANSWER_KEY_SCHEMA.properties)
 
 ## premiseOk
 
-premiseOk는 1번 검사만으로 정한다. 질문 문장과 가정 문장의 기술 사실이 맞으면, 정답지에 오류가 있어도 premiseOk는 true다. 전제가 틀린 질문은 다시 만들고, 정답지만 틀린 경우에는 질문을 그대로 쓰면서 당신이 고친 정답지로 바꾸기 때문이다.
+premiseOk는 1번 검사만으로 정한다. 질문 문장과 가정 문장의 기술 사실이 맞으면, 정답지에 오류가 있어도 premiseOk는 true다. premiseOk와 전제에 대한 problems는 이미 나간 질문의 기록으로 남아 복기에서 쓰이고, 정답지의 오류는 아래 corrections로 따로 고치기 때문이다.
 
 ## problems
 
-틀린 곳마다 problems에 하나씩 적는다. field에는 틀린 부분(text, statement, vanishing, remaining, alternatives, keyPoints 중 하나)을, problem에는 무엇이 왜 틀렸는지를 적는다. 이 문장은 질문을 다시 만들 때 면접관에게 그대로 넘어가므로, 그 문장만 읽고 고칠 수 있게 어느 표현이 어떤 사실과 어긋나는지 구체적으로 쓴다. 틀린 곳이 없으면 빈 배열로 둔다.
+틀린 곳마다 problems에 하나씩 적는다. field에는 틀린 부분(text, statement, vanishing, remaining, alternatives, keyPoints 중 하나)을, problem에는 무엇이 왜 틀렸는지를 적는다. 전제에 대한 problem은 복기에서 쓰이는 기록이고, 정답지에 대한 problem은 무엇을 왜 고쳤는지의 기록이다. 그래서 그 문장만 읽고 무엇이 어떤 사실과 어긋나는지 알 수 있게 구체적으로 쓴다. 틀린 곳이 없으면 빈 배열로 둔다.
 
-## answerKey
+## corrections
 
-answerKey에는 고친 정답지를 돌려준다. 틀린 항목은 고치고, 맞는지 확실하지 않은 항목은 뺀다. 고치거나 뺀 항목은 모두 problems에도 적는다. 정답지에 없던 사실은 확인된 것이 아니면 덧붙이지 않는다. 정답지는 확실한 사실만 담아야 하고, 당신이 덧붙인 사실은 다시 검토받지 않기 때문이다. 문제가 없으면 받은 정답지를 그대로 돌려준다.`;
+corrections에는 정답지에서 고친 부분만 낸다. 틀린 항목은 고치고, 맞는지 확실하지 않은 항목은 뺀다. 고치거나 뺀 항목이 있는 필드만, 그 필드의 새 목록 전체를 낸다. vanishing, remaining, keyPoints는 lists에 field와 새 목록(items)으로 넣고, alternatives를 고쳤으면 alternatives.changed를 true로 하고 새 목록 전체를 items에 넣는다. 문제가 없는 필드는 내지 않는다. 내지 않은 필드는 받은 정답지를 그대로 쓰므로, 고치지 않은 필드까지 다시 쓰면 출력만 길어져 검토가 늦어지기 때문이다. 새 목록을 통째로 내는 것은 항목 하나만 받으면 그것이 어느 항목을 바꾼 것인지 맞춰 넣을 수 없기 때문이다. 고칠 것이 없으면 lists는 빈 배열, alternatives는 changed를 false, items를 빈 배열로 둔다.
+
+고치거나 뺀 항목은 모두 problems에도 적는다. 정답지에 없던 사실은 확인된 것이 아니면 덧붙이지 않는다. 정답지는 확실한 사실만 담아야 하고, 당신이 덧붙인 사실은 다시 검토받지 않기 때문이다.`;
 
   const { question } = input;
   const assumption =
@@ -89,11 +145,24 @@ answerKey에는 고친 정답지를 돌려준다. 틀린 항목은 고치고, �
 export async function verifyAnswerKey(
   llm: JsonLlm,
   input: { topic: string; question: Question },
-): Promise<{ data: Verification; usage: TokenUsage }> {
-  const { data, usage } = await llm.callJson<Verification>({
+): Promise<{ data: Verification; corrected: boolean; usage: TokenUsage }> {
+  const { data, usage } = await llm.callJson<{
+    premiseOk: boolean;
+    problems: Verification['problems'];
+    corrections: Corrections;
+  }>({
     role: 'verify',
     ...buildVerifyPrompt(input),
     schema: VERIFY_SCHEMA,
   });
-  return { data, usage };
+  const { premiseOk, problems, corrections } = data;
+  return {
+    data: {
+      premiseOk,
+      problems,
+      answerKey: applyCorrections(input.question.answerKey, corrections),
+    },
+    corrected: corrections.lists.length > 0 || corrections.alternatives.changed,
+    usage,
+  };
 }

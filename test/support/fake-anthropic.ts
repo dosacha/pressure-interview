@@ -1,5 +1,13 @@
 export type CallKind =
-  'question' | 'analyze' | 'leak' | 'verify' | 'clarify' | 'jobRole' | 'review';
+  | 'question'
+  | 'analyze'
+  | 'leak'
+  | 'verify'
+  | 'premise'
+  | 'answerKey'
+  | 'clarify'
+  | 'jobRole'
+  | 'review';
 export type FakeReply =
   object | Error | ((params: Record<string, unknown>) => object | Promise<object>);
 
@@ -21,34 +29,35 @@ export interface FakeAnthropic {
   once(kind: CallKind, reply: FakeReply): void;
 }
 
-// 요청 스키마의 required에 든 키로 호출 종류를 알아낸다.
+// 요청 스키마의 required에 든 키로 호출 종류를 알아낸다. 검증의 required에도 premiseOk가 있으므로
+// corrections를 premiseOk보다 먼저 본다.
 const KIND_BY_REQUIRED_KEY: [string, CallKind][] = [
   ['questionIntent', 'question'],
   ['kind', 'analyze'],
   ['techs', 'leak'],
-  ['premiseOk', 'verify'],
+  ['corrections', 'verify'],
+  ['premiseOk', 'premise'],
+  ['keyPoints', 'answerKey'],
   ['reply', 'clarify'],
   ['role', 'jobRole'],
   ['intent', 'review'],
 ];
-
-const QUESTION_ANSWER_KEY = {
-  vanishing: [],
-  remaining: [],
-  alternatives: [],
-  keyPoints: ['k1'],
-};
 
 const DEFAULT_REPLIES: Record<CallKind, object> = {
   question: {
     text: '기본 질문입니다.',
     questionIntent: 'A1',
     assumption: { axis: 'none', statement: '' },
-    answerKey: QUESTION_ANSWER_KEY,
   },
   analyze: { kind: 'answer', defects: [], mentionedTechs: [], unknownTechs: [] },
   leak: { techs: [] },
-  verify: { premiseOk: true, problems: [], answerKey: QUESTION_ANSWER_KEY },
+  verify: {
+    premiseOk: true,
+    problems: [],
+    corrections: { lists: [], alternatives: { changed: false, items: [] } },
+  },
+  premise: { premiseOk: true, problems: [] },
+  answerKey: { vanishing: [], remaining: [], alternatives: [], keyPoints: ['k1'] },
   clarify: { reply: '범위는 한 대의 서버입니다.' },
   jobRole: { role: 'dba' },
   review: {

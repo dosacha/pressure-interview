@@ -29,6 +29,23 @@ describe('question.call', () => {
     expect(p.assumption.properties.axis.enum).toEqual([...AXES.map((a) => a.id), 'none']);
     expect(QUESTION_SCHEMA.additionalProperties).toBe(false);
   });
+  it('질문 스키마에 answerKey가 없다', () => {
+    expect(QUESTION_SCHEMA.required).toEqual(['text', 'questionIntent', 'assumption']);
+    expect(QUESTION_SCHEMA.properties).not.toHaveProperty('answerKey');
+  });
+  it('질문 프롬프트는 정답지를 쓰라고 하지 않는다', () => {
+    const { system } = buildQuestionPrompt(input);
+    for (const s of ['answerKey의 네 필드', 'vanishing', '숨은 정답지를 쓴다'])
+      expect(system).not.toContain(s);
+    expect(system).not.toContain('정답지는 판정과 상관없이 사실대로 쓴다');
+    // 무엇을 숨기고 왜 숨기는지는 남는다.
+    expect(system).toContain('복기');
+    expect(system).toContain('질문 문장에 넣은 기술 사실(가정 변경의 전제 등)도 정확해야 한다.');
+  });
+  it('REQUIRED_RULES에 정답지 정확성 줄이 없다', () => {
+    expect(REQUIRED_RULES).not.toContain('숨은 정답지는 정확해야 한다');
+    expect(REQUIRED_RULES.split('\n')).toHaveLength(11);
+  });
   it('시스템 프롬프트에 규칙 문장이 그대로 있다', () => {
     expect(buildQuestionPrompt(input).system).toContain(REQUIRED_RULES);
     expect(REQUIRED_RULES).toContain('O: "사용하신 기술 말고 다른 대안은 없었을까요?"');

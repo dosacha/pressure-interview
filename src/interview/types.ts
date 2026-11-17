@@ -32,11 +32,20 @@ export interface AnswerKey {
   alternatives: { name: string; traits: string }[];
   keyPoints: string[];
 }
-export interface Question {
+// 화면에 나가는 질문과 그 숨은 의도·가정. 정답지는 없다
+export interface QuestionDraft {
   text: string;
   questionIntent: QuestionIntentId;
   assumption: { axis: AxisId | 'none'; statement: string };
+}
+export interface Question extends QuestionDraft {
   answerKey: AnswerKey;
+}
+// 턴에 저장하는 모양. 정답지는 질문이 나간 뒤에 채운다
+export type StoredQuestion = QuestionDraft & { answerKey: AnswerKey | null };
+export interface PremiseCheck {
+  premiseOk: boolean;
+  problems: { field: 'text' | 'statement'; problem: string }[];
 }
 export interface Analysis {
   kind: 'answer' | 'clarify';
@@ -76,18 +85,39 @@ export interface QuestionInput {
   addOn?: boolean;
   memory?: QuestionMemory;
 }
-export interface PreparedQuestion {
-  question: Question;
-  verification: Verification | null;
-  answerKeyCorrected: boolean;
+export interface PreparedDraft {
+  draft: QuestionDraft;
+  // 마지막 시도의 전제 검사. 가정 없는 질문이거나 이름 검사에서 걸렸으면 null
+  premise: PremiseCheck | null;
+  // premise는 보여 주기 전 전제 검사의 결과만 뜻한다
   flags: { leak: boolean; premise: boolean };
   attempts: {
-    question: Question;
+    draft: QuestionDraft;
     naming: NamingResult;
-    verification: Verification | null;
+    premise: PremiseCheck | null;
     // 흘림 검사가 돌려준 그대로(가정 없는 질문에서 premise를 solution으로 바꾸기 전)
-    techs?: TechMention[];
+    techs: TechMention[];
   }[];
+  usage: TokenUsage[];
+}
+// 정답지 호출과 검증에 주는 입력. 질문을 쓸 때의 지시(userMentioned, avoidTechs, memory, feedback, targetAxis)는 없다
+// 이 파일의 Pick(면접관 고르기)이 유틸리티 Pick을 가리므로 QuestionInput의 필드를 그대로 옮겨 적는다.
+export interface AnswerKeyInput {
+  topic: QuestionInput['topic'];
+  interviewer: QuestionInput['interviewer'];
+  reactionIntent: QuestionInput['reactionIntent'];
+  defect: QuestionInput['defect'];
+  addOn?: QuestionInput['addOn'];
+  history: QuestionInput['history'];
+  draft: QuestionDraft;
+}
+export interface CompletedQuestion {
+  // 고친 정답지가 반영된 것
+  question: Question;
+  // answerKey는 고친 뒤의 것
+  verification: Verification;
+  // 검증이 정답지를 실제로 고쳤으면 true
+  answerKeyCorrected: boolean;
   usage: TokenUsage[];
 }
 export interface AnswerInput {
@@ -126,7 +156,8 @@ export type JobRoleId = 'dba' | 'security' | 'architect';
 export interface ClarifyInput {
   topic: string;
   interviewer: PanelMember;
-  question: Question;
+  // 되묻기 응답은 정답지를 쓰지 않는다
+  question: QuestionDraft;
   // 그 질문에서 검출된 기술(prepared.attempts의 마지막 항목의 techs. 없으면 [])
   questionTechs: TechMention[];
   // 이 질문에서 앞서 주고받은 되묻기

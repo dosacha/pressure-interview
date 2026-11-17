@@ -4,8 +4,17 @@ describe('readEngineConfig', () => {
   it('기본값은 모든 호출 claude-opus-5-5와 설계 노력 수준', () => {
     const c = readEngineConfig({});
     expect(Object.values(c.models)).toEqual(Array(4).fill('claude-opus-5-5'));
-    expect(c.effort).toEqual({ analyze: 'medium', question: 'high', verify: 'high', leak: 'low' });
+    expect(c.effort).toEqual({
+      analyze: 'medium',
+      question: 'medium',
+      verify: 'medium',
+      leak: 'low',
+    });
     expect([c.maxConsecutive, c.maxRegenerations]).toEqual([2, 1]);
+  });
+  it('question과 verify의 기본 effort는 medium이다', () => {
+    const c = readEngineConfig({});
+    expect([c.effort.question, c.effort.verify]).toEqual(['medium', 'medium']);
   });
   it('환경 변수로 호출별 값을 바꾼다', () => {
     const c = readEngineConfig({

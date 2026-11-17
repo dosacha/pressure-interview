@@ -8,7 +8,7 @@ import {
   TEMPERAMENTS,
 } from '../catalog';
 import type { JsonLlm } from '../llm/llm.service';
-import type { AssumptionRef, Question, QuestionInput, TokenUsage } from '../types';
+import type { AssumptionRef, QuestionDraft, QuestionInput, TokenUsage } from '../types';
 
 export const REQUIRED_RULES = [
   '- 한 질문에서 묻는 것은 하나다. 꼭 이어서 물어야 할 때만 둘까지 묻고, 셋 이상은 묻지 않는다.',
@@ -22,7 +22,6 @@ export const REQUIRED_RULES = [
   '- O: "사용하신 기술 말고 다른 대안은 없었을까요?"',
   '- O: "대안이 있었다는 걸 아셨는데 왜 그 기술을 사용했나요?"',
   '- 가정 변경 질문은 장단점을 만드는 원인 하나를 바꿔, 무엇이 사라지고 무엇이 남는지 묻게 만든다.',
-  '- 숨은 정답지는 정확해야 한다. 확실하지 않은 사실은 정답지에 넣지 않는다.',
 ].join('\n');
 
 const stringList = (description: string) => ({
@@ -58,7 +57,7 @@ export const ANSWER_KEY_SCHEMA = {
 export const QUESTION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['text', 'questionIntent', 'assumption', 'answerKey'],
+  required: ['text', 'questionIntent', 'assumption'],
   properties: {
     text: { type: 'string', description: '지원자에게 보여 줄 질문 문장' },
     questionIntent: {
@@ -82,7 +81,6 @@ export const QUESTION_SCHEMA = {
         },
       },
     },
-    answerKey: ANSWER_KEY_SCHEMA,
   },
 };
 
@@ -132,17 +130,17 @@ export function buildQuestionPrompt(input: QuestionInput): { system: string; use
 
   const system = `당신은 기술 압박 면접 패널의 면접관이다. 이 면접은 지원자 한 사람이 혼자 쓰는 연습 도구다. 지원자는 생각지 못한 질문이 들어와도 당황하지 않고 답하는 힘을 기르고, 기술의 장단점이 왜 생기는지 다시 생각해 보려고 이 면접을 본다. 지원자를 가장 당황하게 하는 것은 생각지도 못한 가정을 들어 비교를 묻는 질문이다. 예: "인메모리로 도는 PostgreSQL이라면 Redis와 뭐가 다를까요?"
 
-이번 턴에 당신은 다음 질문 하나와 그 질문의 숨은 정답지를 쓴다. 질문은 지원자 화면에 바로 나간다. 숨은 정답지는 면접 중에는 숨기고, 면접이 끝난 뒤 복기에서 질문 의도와 함께 지원자에게 공개한다. 지원자는 복기에서 자기 답을 의도와 정답지에 대조하며 배운다. 그래서 면접 중에는 실제 면접처럼 묻기만 하고, 가르칠 내용은 모두 정답지에 담는다.
+이번 턴에 당신은 다음 질문 하나를 쓴다. 질문은 지원자 화면에 바로 나간다. 이 질문의 숨은 정답지는 이 질문을 본 뒤 다른 호출이 따로 쓴다. 숨은 정답지는 면접 중에는 숨기고, 면접이 끝난 뒤 복기에서 질문 의도와 함께 지원자에게 공개한다. 지원자는 복기에서 자기 답을 의도와 정답지에 대조하며 배운다. 그래서 면접 중에는 실제 면접처럼 묻기만 하고, 가르칠 내용은 질문에 넣지 않고 정답지에 맡긴다.
 
 ## 규칙
 
 ${REQUIRED_RULES}
 
-규칙의 이유: 의도를 숨기는 것은 지원자가 기술을 고민하기 전에 면접관의 의도부터 읽는 연습을 하게 하려는 것이다. 지원자가 말하지 않은 해답 기술이나 그 특징을 질문에 흘리면, 지원자가 스스로 대안을 떠올려야 하는 연습이 사라진다. 정답지가 틀리면 지원자가 복기에서 잘못된 지식을 배운다.
+규칙의 이유: 의도를 숨기는 것은 지원자가 기술을 고민하기 전에 면접관의 의도부터 읽는 연습을 하게 하려는 것이다. 지원자가 말하지 않은 해답 기술이나 그 특징을 질문에 흘리면, 지원자가 스스로 대안을 떠올려야 하는 연습이 사라진다.
 
 ## 면접관
 
-기술 지식은 시니어 수준으로 완벽하다고 전제한다. 지원자의 답이 어디까지 맞고 무엇이 빠졌는지 정확히 알아봐야 반응과 정답지가 의미를 갖기 때문이다.${role.type === 'textbook' ? `\n\n${TEXTBOOK_PERSONA}` : ''}
+기술 지식은 시니어 수준으로 완벽하다고 전제한다. 지원자의 답이 어디까지 맞고 무엇이 빠졌는지 정확히 알아봐야 반응이 의미를 갖기 때문이다.${role.type === 'textbook' ? `\n\n${TEXTBOOK_PERSONA}` : ''}
 
 이 도구에는 코딩 테스트가 없다. 코드를 쓰게 하거나 코딩 문제의 풀이를 말로 설명하게 하는 질문은 하지 않는다.
 
@@ -162,9 +160,9 @@ ${listIntents(QUESTION_INTENTS, QUESTION_INTENT_DEFS)}
 
 ${listIntents(REACTION_INTENTS, REACTION_INTENT_DEFS)}
 
-힌트나 반박으로 반응할 때(B4~B9)는 문제가 있다는 신호나 새 조건만 주고, 무엇이 맞는지나 어떤 기술로 풀 수 있는지는 말하지 않는다. 그 내용은 정답지에 쓴다. 맞는 답을 흔드는 B8에서는 답이 맞았다는 것도 드러내지 않는다.
+힌트나 반박으로 반응할 때(B4~B9)는 문제가 있다는 신호나 새 조건만 주고, 무엇이 맞는지나 어떤 기술로 풀 수 있는지는 말하지 않는다. 그 내용은 숨은 정답지에 들어가 복기에서 공개되기 때문이다. 맞는 답을 흔드는 B8에서는 답이 맞았다는 것도 드러내지 않는다.
 
-user 메시지의 직전 답변 결함은 분석 단계가 찾은 판정이고, 틀릴 수 있다. 면접 중의 판정 오류는 복기에서 바로잡으므로 질문은 판정대로 반응해도 된다. 하지만 정답지는 판정과 상관없이 사실대로 쓴다.
+user 메시지의 직전 답변 결함은 분석 단계가 찾은 판정이고, 틀릴 수 있다. 면접 중의 판정 오류는 복기에서 바로잡으므로 질문은 판정대로 반응해도 된다.
 
 한 질문에서 묻는 것이 하나여야 하는 까닭은, 지원자가 한 번에 하나씩 답하고 여러 가지를 한꺼번에 물으면 무엇에 답해야 할지 흐려지기 때문이다. 더 묻고 싶은 것은 다음 질문으로 남긴다. 물음을 세울 상황을 설명하는 문장은 물음으로 세지 않지만, 상황 설명도 그 물음에 필요한 만큼만 쓴다. 가정을 바꾼 질문에서 "무엇이 사라지고 무엇이 남는가"는 둘로 센다.
 
@@ -177,7 +175,7 @@ user 메시지의 직전 답변 결함은 분석 단계가 찾은 판정이고, 
 ${AXES.map((a) => `- ${a.id} ${a.name}`).join('\n')}
 - none 가정을 바꾸지 않는 질문
 
-identity_swap은 기술 하나의 핵심 속성을 바꾼 가상의 기술을 세우고 다른 기술과 비교하게 하는 유형이다. 지원자가 실제로 당황했던 유형인데 공개된 사례가 드물다. 그래서 어떤 속성을 바꿨는지는 질문에서 분명히 말하되, 그 결과 무엇이 같아지고 무엇이 남는지는 지원자가 답하게 둔다. 그 답이 정답지의 vanishing과 remaining이기 때문이다.
+identity_swap은 기술 하나의 핵심 속성을 바꾼 가상의 기술을 세우고 다른 기술과 비교하게 하는 유형이다. 지원자가 실제로 당황했던 유형인데 공개된 사례가 드물다. 그래서 어떤 속성을 바꿨는지는 질문에서 분명히 말하되, 그 결과 무엇이 같아지고 무엇이 남는지는 지원자가 답하게 둔다. 무엇이 같아지고 무엇이 남는지가 이 질문으로 확인하려는 답이기 때문이다.
 
 user 메시지에 가정 변경 축이 지정돼 있으면 그 축으로 가정 변경 질문을 하고, assumption.axis에 그 축 id를 적는다. 지정이 없으면 가정을 바꿀지는 대화 흐름을 보고 정하고, 바꾼다면 직무가 주로 바꾸는 축을 먼저 고려한다. 반응 의도와 가정 변경 축이 함께 주어지면, 직전 답변에서 출발해 가정을 바꾼 질문 하나에 둘을 함께 담는다.
 
@@ -193,14 +191,7 @@ assumption.statement에는 바뀐 가정을 기술 이름 없이 한 문장으�
 
 ## 숨은 정답지
 
-answerKey의 네 필드는 다음 뜻이다.
-${Object.entries(ANSWER_KEY_SCHEMA.properties)
-  .map(([key, field]) => `- ${key}: ${field.description}`)
-  .join('\n')}
-
-가정을 바꾸지 않는 질문이면 vanishing과 remaining은 빈 배열로 둔다.
-
-기술 이름 규칙은 질문 문장(text)에만 적용된다. 정답지는 복기에서 공개하므로, 지원자가 말하지 않은 대안 기술과 그 특징도 alternatives에 적는다. 질문에서 흘리면 안 되는 내용이 바로 정답지에 들어가야 하는 내용이다.
+숨은 정답지에는 바뀐 가정에서 사라지는 차이와 남는 차이, 고려할 만한 대안 기술과 그 특징, 기대하는 답의 핵심이 들어간다. 지원자가 말하지 않은 대안 기술과 그 특징도 들어간다. 정답지는 면접 중에는 숨기고 복기에서 공개하기 때문이다. 질문에서 흘리면 안 되는 내용이 바로 이 정답지가 담는 내용이다. 정답지는 이 질문을 본 뒤 다른 호출이 쓰므로, 당신은 그 내용을 질문 문장에 넣지 않는 데만 신경 쓴다.
 
 질문 문장에 넣은 기술 사실(가정 변경의 전제 등)도 정확해야 한다. 질문은 지원자 화면에 그대로 나가므로, 틀린 전제는 면접 중에 바로 잘못된 지식으로 보인다.`;
 
@@ -295,8 +286,8 @@ ${Object.entries(ANSWER_KEY_SCHEMA.properties)
 export async function generateQuestion(
   llm: JsonLlm,
   input: QuestionInput,
-): Promise<{ data: Question; usage: TokenUsage }> {
-  const { data, usage } = await llm.callJson<Question>({
+): Promise<{ data: QuestionDraft; usage: TokenUsage }> {
+  const { data, usage } = await llm.callJson<QuestionDraft>({
     role: 'question',
     ...buildQuestionPrompt(input),
     schema: QUESTION_SCHEMA,

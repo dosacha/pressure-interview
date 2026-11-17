@@ -29,17 +29,18 @@ const session: InterviewSession = {
   reviewedAt: null,
 };
 
-const question = {
+const draft = {
   text: '보이는 질문 문장',
   questionIntent: 'A1' as const,
   assumption: { axis: 'scale' as const, statement: '숨은-가정-문장' },
-  answerKey: {
-    vanishing: ['숨은-사라짐'],
-    remaining: ['숨은-남음'],
-    alternatives: [{ name: '숨은-대안', traits: '숨은-특징' }],
-    keyPoints: ['숨은-핵심'],
-  },
 };
+const answerKey = {
+  vanishing: ['숨은-사라짐'],
+  remaining: ['숨은-남음'],
+  alternatives: [{ name: '숨은-대안', traits: '숨은-특징' }],
+  keyPoints: ['숨은-핵심'],
+};
+const question = { ...draft, answerKey };
 
 const turnWithEverything: InterviewTurn = {
   id: 't1',
@@ -57,9 +58,9 @@ const turnWithEverything: InterviewTurn = {
     answerKeyCorrected: false,
     attempts: [
       {
-        question,
+        draft,
         naming: { ok: true, violations: [], avoided: [] },
-        verification: null,
+        premise: { premiseOk: true, problems: [{ field: 'text', problem: '숨은-전제-문제' }] },
         techs: [{ name: '숨은-기술', role: 'premise' }],
       },
     ],
@@ -67,7 +68,7 @@ const turnWithEverything: InterviewTurn = {
   verification: {
     premiseOk: true,
     problems: [{ field: 'f', problem: '숨은-문제' }],
-    answerKey: question.answerKey,
+    answerKey,
   },
   clarifications: [{ ask: '되묻기', reply: '응답', leak: true }],
   answer: '지원자 답',
@@ -119,11 +120,11 @@ describe('toInterviewView', () => {
 
   it('숨긴 값이 뷰의 어디에도 없다 (Review Focus 1)', () => {
     const json = JSON.stringify(toInterviewView(session, [turnWithEverything]));
-    const q = turnWithEverything.question;
     for (const hidden of [
-      q.answerKey.keyPoints[0],
-      q.answerKey.alternatives[0].name,
-      q.assumption.statement,
+      answerKey.keyPoints[0],
+      answerKey.alternatives[0].name,
+      draft.assumption.statement,
+      '숨은-전제-문제',
       turnWithEverything.defect!.note,
       turnWithEverything.analysis!.defects[0].note,
       '집요형',
@@ -132,7 +133,7 @@ describe('toInterviewView', () => {
     ]) {
       expect(json).not.toContain(hidden);
     }
-    expect(json).toContain(q.text);
+    expect(json).toContain(draft.text);
   });
 
   it('pending은 답을 기다리면 answer, 답 뒤 단계가 빠졌으면 retry, 끝났으면 null', () => {

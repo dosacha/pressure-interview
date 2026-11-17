@@ -49,9 +49,8 @@ describe('면접 HTTP API (e2e)', () => {
       text: '질문',
       questionIntent: 'A1',
       assumption: { axis: 'scale', statement: '비밀-가정-7732' },
-      answerKey: MARKED_KEY,
     });
-    fake.on('verify', { premiseOk: true, problems: [], answerKey: MARKED_KEY });
+    fake.on('answerKey', MARKED_KEY);
     fake.on('analyze', {
       kind: 'answer',
       defects: [{ type: 'vague', axis: 'scale', note: '비밀-메모-7733' }],
@@ -74,13 +73,15 @@ describe('면접 HTTP API (e2e)', () => {
     for (const body of bodies)
       for (const mark of ['7731', '7732', '7733', '7734', '집요형', '조력형', '흔드는형'])
         expect(body).not.toContain(mark);
-    // 표식이 DB에는 있어야 위 단언이 뜻을 가진다
+    // 표식이 DB에는 있어야 위 단언이 뜻을 가진다. 정답지는 뒤 작업이 채우므로 끝나기를 기다린다.
+    await app.get(InterviewService).settle();
     const rows = await app
       .get(DataSource)
       .getRepository(InterviewTurn)
       .find({ where: { sessionId: id } });
     const first = rows.sort((x, y) => x.seq - y.seq)[0];
-    expect(first.question.answerKey.keyPoints).toContain('비밀-핵심-7731');
+    expect(first.question.answerKey?.keyPoints).toContain('비밀-핵심-7731');
+    expect(first.question.answerKey?.alternatives[0].name).toBe('비밀-대안-7734');
     expect(first.question.assumption.statement).toBe('비밀-가정-7732');
     expect(first.analysis?.defects[0].note).toBe('비밀-메모-7733');
   });

@@ -46,7 +46,7 @@ describe('LlmService', () => {
         system: 'S',
         messages: [{ role: 'user', content: 'U' }],
         output_config: {
-          effort: 'high',
+          effort: 'medium',
           format: { type: 'json_schema', schema: { type: 'object' } },
         },
       }),

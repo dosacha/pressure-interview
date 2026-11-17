@@ -3,9 +3,11 @@ import type { ConfigType } from '@nestjs/config';
 import { engineConfig } from '../config/engine.config';
 import { OWNABLE_AXES, ROLES } from './catalog';
 import { analyzeAnswer } from './calls/analyze.call';
+import { writeAnswerKey } from './calls/answer-key.call';
 import { answerClarification } from './calls/clarify.call';
 import { pickJobRole } from './calls/job-role.call';
 import { detectTechs } from './calls/leak.call';
+import { checkPremise } from './calls/premise.call';
 import { generateQuestion } from './calls/question.call';
 import { verifyAnswerKey } from './calls/verify.call';
 import { LlmService } from './llm/llm.service';
@@ -13,18 +15,19 @@ import { checkNaming } from './naming';
 import { pickNext } from './rules';
 import type {
   AnswerInput,
+  AnswerKeyInput,
   AnswerResult,
   ClarifyInput,
   ClarifyResult,
+  CompletedQuestion,
   Defect,
   JobRoleId,
   NamingResult,
-  PreparedQuestion,
-  Question,
+  PreparedDraft,
+  PremiseCheck,
   QuestionInput,
   TechMention,
   TokenUsage,
-  Verification,
 } from './types';
 
 // 이름 위반을 다음 시도에 줄 피드백 문장으로 바꾼다. 해답 위반 먼저, 이름은 한 문장에만 넣는다.
@@ -46,26 +49,27 @@ export class TurnService {
     @Inject(engineConfig.KEY) private readonly config: ConfigType<typeof engineConfig>,
   ) {}
 
-  async prepareQuestion(input: QuestionInput): Promise<PreparedQuestion> {
+  // 화면에 낼 질문만 만든다. 정답지는 completeQuestion이 질문이 나간 뒤에 쓴다.
+  async prepareDraft(input: QuestionInput): Promise<PreparedDraft> {
     const usage: TokenUsage[] = [];
-    const attempts: PreparedQuestion['attempts'] = [];
+    const attempts: PreparedDraft['attempts'] = [];
     const feedback = [...input.feedback];
-    let verification: Verification | null = null;
+    let premise: PremiseCheck | null = null;
     let leak = false;
 
     for (let i = 0; i <= this.config.maxRegenerations; i++) {
       const generated = await generateQuestion(this.llm, { ...input, feedback });
-      const question = generated.data;
+      const draft = generated.data;
       usage.push(generated.usage);
       const detected = await detectTechs(this.llm, {
-        questionText: question.text,
+        questionText: draft.text,
         userMentioned: input.userMentioned,
       });
       usage.push(detected.usage);
       const techs = detected.data.techs;
       // 설계 6.3: premise는 가정 변경의 전제일 때만 허용한다. 가정 없는 질문의 premise는 해답으로 본다.
       const checked =
-        question.assumption.axis === 'none'
+        draft.assumption.axis === 'none'
           ? techs.map((t): TechMention => (t.role === 'premise' ? { ...t, role: 'solution' } : t))
           : techs;
       const naming = checkNaming({
@@ -73,36 +77,46 @@ export class TurnService {
         userMentioned: input.userMentioned,
         avoid: input.avoidTechs,
       });
-      verification = null;
-      if (naming.ok && question.assumption.axis !== 'none') {
-        const verified = await verifyAnswerKey(this.llm, { topic: input.topic, question });
-        usage.push(verified.usage);
-        verification = verified.data;
+      premise = null;
+      // 설계 6.2-6: 틀린 전제가 화면에 나가지 않게, 가정을 바꾼 질문은 보여 주기 전에 전제만 검사한다.
+      if (naming.ok && draft.assumption.axis !== 'none') {
+        const result = await checkPremise(this.llm, { topic: input.topic, draft });
+        usage.push(result.usage);
+        premise = result.data;
       }
-      attempts.push({ question, naming, verification, techs });
+      attempts.push({ draft, naming, premise, techs });
 
       leak = !naming.ok;
       if (leak) {
         feedback.push(...namingFeedback(naming));
-      } else if (verification && !verification.premiseOk) {
-        feedback.push(...verification.problems.map((p) => p.problem));
+      } else if (premise && !premise.premiseOk) {
+        feedback.push(...premise.problems.map((p) => p.problem));
       } else {
         break;
       }
     }
 
-    const last = attempts[attempts.length - 1];
-    const answerKeyCorrected = verification !== null && verification.problems.length > 0;
     return {
-      question:
-        verification && answerKeyCorrected
-          ? { ...last.question, answerKey: verification.answerKey }
-          : last.question,
-      verification,
-      answerKeyCorrected,
-      flags: { leak, premise: verification !== null && !verification.premiseOk },
+      draft: attempts[attempts.length - 1].draft,
+      premise,
+      flags: { leak, premise: premise !== null && !premise.premiseOk },
       attempts,
       usage,
+    };
+  }
+
+  // 질문이 나간 뒤에 정답지를 쓰고 검증한다. 검증에서 전제가 틀렸다고 나와도 질문은 다시 만들지 않는다.
+  async completeQuestion(input: AnswerKeyInput): Promise<CompletedQuestion> {
+    const written = await writeAnswerKey(this.llm, input);
+    const verified = await verifyAnswerKey(this.llm, {
+      topic: input.topic,
+      question: { ...input.draft, answerKey: written.data },
+    });
+    return {
+      question: { ...input.draft, answerKey: verified.data.answerKey },
+      verification: verified.data,
+      answerKeyCorrected: verified.corrected,
+      usage: [written.usage, verified.usage],
     };
   }
 
@@ -135,15 +149,6 @@ export class TurnService {
   async pickJobRole(topic: string): Promise<{ role: JobRoleId; usage: TokenUsage }> {
     const { data, usage } = await pickJobRole(this.llm, topic);
     return { role: data.role, usage };
-  }
-
-  // 가정 없는 질문은 prepareQuestion이 검증하지 않으므로 그 정답지를 나중에 검증한다(설계 6.2의 6단계).
-  async verifyLate(input: {
-    topic: string;
-    question: Question;
-  }): Promise<{ verification: Verification; usage: TokenUsage }> {
-    const { data, usage } = await verifyAnswerKey(this.llm, input);
-    return { verification: data, usage };
   }
 
   async handleAnswer(input: AnswerInput): Promise<AnswerResult> {

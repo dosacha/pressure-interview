@@ -42,6 +42,21 @@ describe('앱 뼈대', () => {
     expect(fake.calls[0].kind).toBe('leak');
   });
 
+  it('required로 질문·정답지·전제 검사·검증을 가려낸다', async () => {
+    const fake = createFakeAnthropic();
+    for (const required of [
+      ['text', 'questionIntent', 'assumption'],
+      ['vanishing', 'remaining', 'alternatives', 'keyPoints'],
+      ['premiseOk', 'problems'],
+      ['premiseOk', 'problems', 'corrections'],
+    ]) {
+      await fake.client.beta.messages.create({
+        output_config: { format: { schema: { required } } },
+      });
+    }
+    expect(fake.calls.map((c) => c.kind)).toEqual(['question', 'answerKey', 'premise', 'verify']);
+  });
+
   it('once가 on보다 먼저 쓰이고 한 번만 쓰인다', async () => {
     const fake = createFakeAnthropic();
     const params = { output_config: { format: { schema: { required: ['reply'] } } } };

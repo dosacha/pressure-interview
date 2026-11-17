@@ -1,9 +1,13 @@
 import { readFileSync } from 'fs';
 import type { AxisId } from '../../src/interview/catalog';
-import { verifyAnswerKey } from '../../src/interview/calls/verify.call';
 import { JsonLlm, RefusalError } from '../../src/interview/llm/llm.service';
 import type { TurnService } from '../../src/interview/turn.service';
-import type { PanelMember, QuestionInput, TokenUsage } from '../../src/interview/types';
+import type {
+  CompletedQuestion,
+  PanelMember,
+  QuestionInput,
+  TokenUsage,
+} from '../../src/interview/types';
 import { writeCandidateAnswer, type AnswerKind } from './candidate';
 import type { R1FollowUp, R1Result, R1Step } from './report';
 
@@ -17,7 +21,7 @@ export interface Scenario {
 }
 
 export interface R1Deps {
-  turn: Pick<TurnService, 'prepareQuestion' | 'handleAnswer'>;
+  turn: Pick<TurnService, 'prepareDraft' | 'completeQuestion' | 'handleAnswer'>;
   llm: JsonLlm;
   log: (line: string) => void;
 }
@@ -38,33 +42,37 @@ function member(panel: PanelMember[], id: string): PanelMember {
   return m;
 }
 
-// 질문이 만들어지면 사후 검증 전에 save로 넘긴다. 사후 검증이 실패해도 질문은 결과에 남는다.
+// 초안이 만들어지면 정답지 작성 전에 save로 넘긴다. 정답지 작성이나 검증이 실패해도 돈을 내고 만든 초안은 결과에 남는다.
 async function makeStep(
   deps: R1Deps,
   label: string,
   input: QuestionInput,
   usage: TokenUsage[],
   save: (step: R1Step) => void,
-): Promise<R1Step> {
+): Promise<CompletedQuestion> {
   deps.log(`${label} 질문 생성`);
-  const prepared = await deps.turn.prepareQuestion(input);
+  const prepared = await deps.turn.prepareDraft(input);
   usage.push(...prepared.usage);
   const step: R1Step = {
     prepared,
-    lateVerification: null,
+    completed: null,
     askedBy: input.interviewer.id,
     targetAxis: input.targetAxis,
   };
   save(step);
-  if (prepared.question.assumption.axis !== 'none') return step;
-  deps.log(`${label} 사후 검증`);
-  const verified = await verifyAnswerKey(deps.llm, {
+  deps.log(`${label} 정답지 작성과 검증`);
+  const completed = await deps.turn.completeQuestion({
     topic: input.topic,
-    question: prepared.question,
+    interviewer: input.interviewer,
+    reactionIntent: input.reactionIntent,
+    defect: input.defect,
+    addOn: input.addOn,
+    history: input.history,
+    draft: prepared.draft,
   });
-  usage.push(verified.usage);
-  step.lateVerification = verified.data;
-  return step;
+  usage.push(...completed.usage);
+  step.completed = completed;
+  return completed;
 }
 
 export async function runScenarios(deps: R1Deps, scenarios: Scenario[]): Promise<R1Result[]> {
@@ -99,17 +107,13 @@ export async function runScenarios(deps: R1Deps, scenarios: Scenario[]): Promise
         result.usage,
         (step) => (result.first = step),
       );
-      // 설계 6.2의 6단계: 사후 검증이 정답지를 고쳤으면 이후 반응에는 고친 정답지를 쓴다.
-      const late = first.lateVerification;
-      const question =
-        late && late.problems.length > 0
-          ? { ...first.prepared.question, answerKey: late.answerKey }
-          : first.prepared.question;
+      // 검증이 정답지를 고쳤으면 이후 반응에는 고친 정답지를 쓴다.
+      const { question } = first;
 
       for (const [i, a] of s.answers.entries()) {
         const label = `[${s.id}] 답 ${i + 1}/${s.answers.length} (${a.kind})`;
         deps.log(`${label} 답 생성`);
-        // 사후 검증이 정답지를 고쳐도 질문 문장은 같다. 지원자에게는 문장만 준다.
+        // 검증이 정답지를 고쳐도 질문 문장은 같다. 지원자에게는 문장만 준다.
         const written = await writeCandidateAnswer(deps.llm, {
           topic: s.topic,
           questionText: question.text,

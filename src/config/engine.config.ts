@@ -15,8 +15,8 @@ const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 const DEFAULT_MODEL = 'claude-opus-5-5';
 const DEFAULT_EFFORT: Record<CallRole, Effort> = {
   analyze: 'medium',
-  question: 'high',
-  verify: 'high',
+  question: 'medium',
+  verify: 'medium',
   leak: 'low',
 };
 

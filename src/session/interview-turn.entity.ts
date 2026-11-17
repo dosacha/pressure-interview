@@ -6,8 +6,8 @@ import type {
   Clarification,
   Defect,
   Pick,
-  PreparedQuestion,
-  Question,
+  PreparedDraft,
+  StoredQuestion,
   Verification,
 } from '../interview/types';
 
@@ -41,13 +41,14 @@ export class InterviewTurn {
   targetAxis!: AxisId | null;
 
   @Column({ name: 'question', type: 'jsonb' })
-  question!: Question;
+  question!: StoredQuestion;
 
+  // 계획 2 A2 이전에 끝난 면접의 행은 예전 모양(attempts에 question·verification)으로 남아 있다.
   @Column({ name: 'prepared', type: 'jsonb' })
   prepared!: {
-    flags: PreparedQuestion['flags'];
+    flags: PreparedDraft['flags'];
     answerKeyCorrected: boolean;
-    attempts: PreparedQuestion['attempts'];
+    attempts: PreparedDraft['attempts'];
   };
 
   @Column({ name: 'verification', type: 'jsonb', nullable: true })
