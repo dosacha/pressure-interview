@@ -197,12 +197,26 @@ describe('정답지 검증은 고친 부분만 낸다', () => {
     const altOnly = await verifyWith({
       premiseOk: true,
       problems: [{ field: 'alternatives', problem: '틀림' }],
-      corrections: { lists: [], alternatives: { changed: true, items: [] } },
+      corrections: {
+        lists: [],
+        alternatives: { changed: true, items: [{ name: 'X', traits: 't' }] },
+      },
     });
     expect(altOnly.corrected).toBe(true);
     const same = await verifyWith({ premiseOk: true, problems: [], corrections: NO_CORRECTIONS });
     expect(same.corrected).toBe(false);
     expect(same.data.answerKey).toEqual(question.answerKey);
+  });
+  it('원래와 같은 목록을 다시 내면 corrected는 false다', async () => {
+    const r = await verifyWith({
+      premiseOk: true,
+      problems: [],
+      corrections: {
+        lists: [{ field: 'keyPoints', items: [...question.answerKey.keyPoints] }],
+        alternatives: { changed: false, items: [] },
+      },
+    });
+    expect(r.corrected).toBe(false);
   });
   it('정답지 문제 없이 전제 문제만 적히면 corrected는 false다', async () => {
     const r = await verifyWith({

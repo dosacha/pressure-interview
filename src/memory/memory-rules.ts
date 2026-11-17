@@ -28,7 +28,7 @@ export function foldAssumptions(turns: FoldTurn[], recordIds: string[]): FoldedA
       (t) =>
         t.question.assumption.axis !== 'none' &&
         t.review !== null &&
-        t.review.assumption.result !== 'none' &&
+        (t.review.assumption.userResult ?? t.review.assumption.result) !== 'none' &&
         // 답한 턴만 복기되므로 answeredAt이 없는 턴은 없어야 한다. 있으면 만남의 시각을 정할 수 없어 뺀다.
         t.answeredAt !== null,
     )

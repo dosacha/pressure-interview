@@ -71,13 +71,13 @@ export class InterviewService {
     const id = randomUUID();
     const { topic } = input;
     const questionLimit = input.questionLimit ?? this.config.questionLimit;
-    const { memory, panel, opener, prepared } = await this.recorder
-      .run(id, async () => {
-        const memory = await this.memorySource.snapshot(new Date());
-        const { role } = await this.engine.pickJobRole(topic);
-        const panel = composePanel(role, this.rng);
-        const opener = pickOpener(panel, this.rng);
-        const prepared = await this.engine.prepareDraft({
+    const { memory, panel, opener, prepared } = await this.recorder.run(id, async () => {
+      const memory = await this.memorySource.snapshot(new Date());
+      const { role } = await this.call(this.engine.pickJobRole(topic));
+      const panel = composePanel(role, this.rng);
+      const opener = pickOpener(panel, this.rng);
+      const prepared = await this.call(
+        this.engine.prepareDraft({
           topic,
           interviewer: opener,
           reactionIntent: null,
@@ -89,12 +89,10 @@ export class InterviewService {
           avoidTechs: [],
           addOn: false,
           memory,
-        });
-        return { memory, panel, opener, prepared };
-      })
-      .catch((e: unknown) => {
-        throw this.upstream(e);
-      });
+        }),
+      );
+      return { memory, panel, opener, prepared };
+    });
 
     const turnId = randomUUID();
     await this.dataSource.transaction(async (m) => {

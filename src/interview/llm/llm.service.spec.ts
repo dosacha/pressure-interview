@@ -152,6 +152,19 @@ describe('usageRows', () => {
     });
     expect(rows.map((r) => r.model)).toEqual(['b']);
   });
+  it('iterations에 message도 fallback_message도 없으면 최상위 usage 한 줄', () => {
+    const rows = usageRows('question', {
+      model: 'b',
+      usage: {
+        input_tokens: 9,
+        output_tokens: 8,
+        iterations: [{ type: 'compaction', input_tokens: 7, output_tokens: 7 }],
+      },
+    });
+    expect(rows).toEqual([
+      { role: 'question', model: 'b', input_tokens: 9, output_tokens: 8, fallback: false },
+    ]);
+  });
   it('message도 fallback_message도 아닌 항목은 세지 않는다', () => {
     const rows = usageRows('question', {
       model: 'b',

@@ -18,6 +18,14 @@ export function StartScreen(props: {
   const [items, setItems] = useState<InterviewListItem[]>([]);
   const [topics, setTopics] = useState<string[]>([]);
   const sending = useRef(false); // state는 다음 렌더에야 바뀌므로, 두 번 누름은 ref로 막는다.
+  // 시작 응답이 늦게 와도 이미 다른 화면으로 갔으면 끌어오지 않는다.
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     listInterviews().then(setItems, () => setError('최근 면접을 불러오지 못했습니다.'));
@@ -31,8 +39,11 @@ export function StartScreen(props: {
     setStarting(true);
     setError(null);
     startInterview(topic, limit === LIMITS[0] ? undefined : Number(limit)).then(
-      (view) => props.onOpen(view.id),
+      (view) => {
+        if (mounted.current) props.onOpen(view.id);
+      },
       (err: unknown) => {
+        if (!mounted.current) return;
         sending.current = false;
         setStarting(false);
         setError(describeApiError(err).text);
@@ -136,6 +147,7 @@ export function StartScreen(props: {
                   </div>
                   <button
                     type="button"
+                    disabled={starting}
                     className="min-h-11 rounded border border-line px-4"
                     onClick={() => (done ? props.onReview(it.id) : props.onOpen(it.id))}
                   >

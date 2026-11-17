@@ -114,6 +114,11 @@ describe('foldAssumptions', () => {
     );
     expect(out).toEqual([]);
   });
+  it('복기 결과가 none이어도 직접 고친 결과가 있으면 묶음에 넣고 그 결과를 쓴다', () => {
+    const out = foldAssumptions([turn('t1', 1, 'none', null, { userResult: 'wrong' })], []);
+    expect(out).toHaveLength(1);
+    expect(out[0].result).toBe('wrong');
+  });
 });
 
 describe('selectMemory', () => {

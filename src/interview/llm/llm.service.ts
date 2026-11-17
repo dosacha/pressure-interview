@@ -54,7 +54,8 @@ export function usageRows(
         fallback: it.type === 'fallback_message',
       });
     }
-    return rows;
+    // 셀 수 있는 항목이 하나도 없으면 과금된 호출이 빠지지 않게 최상위 usage로 센다.
+    if (rows.length > 0) return rows;
   }
   return [
     {

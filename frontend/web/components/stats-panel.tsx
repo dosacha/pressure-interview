@@ -14,7 +14,20 @@ export function StatsPanel(props: { version?: number }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getStats().then(setStats, (e: unknown) => setError(describeApiError(e).text));
+    // 표시를 빠르게 두 번 고치면 늦게 온 첫 응답이 새 값을 덮어쓰지 않게, 이 effect의 응답만 반영한다.
+    let alive = true;
+    setError(null);
+    getStats().then(
+      (s) => {
+        if (alive) setStats(s);
+      },
+      (e: unknown) => {
+        if (alive) setError(describeApiError(e).text);
+      },
+    );
+    return () => {
+      alive = false;
+    };
   }, [props.version]);
 
   return (

@@ -140,6 +140,18 @@ describe('TurnService.prepareDraft', () => {
     expect(r.draft.text).toBe('둘째 시도');
     expect(r.flags.premise).toBe(false);
   });
+  it('전제가 틀렸는데 problems가 비면 일반 피드백 문장을 넣어 다시 만든다', async () => {
+    const { turn, calls } = await service({
+      question: [d('identity_swap', '첫 시도'), d('identity_swap', '둘째 시도')],
+      leak: [{ techs: [] }, { techs: [] }],
+      premise: [{ premiseOk: false, problems: [] }, OK],
+    });
+    await turn.prepareDraft(base);
+    const questionCalls = calls.filter((c) => c.kind === 'question');
+    expect(questionCalls[1].user).toContain(
+      '질문 문장의 기술 전제가 틀렸다는 지적을 받았다. 전제로 쓴 기술 사실을 다시 확인한다.',
+    );
+  });
   it('전제가 끝까지 틀리면 flags.premise', async () => {
     const bad = { premiseOk: false, problems: [{ field: 'text', problem: '전제 오류' }] };
     const { turn, calls } = await service({
@@ -601,6 +613,29 @@ describe('TurnService.handleAnswer', () => {
     expect(r.pick?.interviewerId).toBe('p1');
     expect(r.pick?.reactionIntent).toBe('B9');
     expect(r.userMentioned).toEqual(['Redis']);
+  });
+  it('이미 말한 기술을 표기만 다르게 모른다고 넣어도 거른다', async () => {
+    const { turn } = await service({
+      analyze: [
+        {
+          kind: 'answer',
+          defects: [{ type: 'wrong', axis: 'durability', note: 'n' }],
+          mentionedTechs: [],
+          unknownTechs: ['redis '],
+        },
+      ],
+    });
+    const r = await turn.handleAnswer({
+      topic: 'Redis',
+      panel,
+      history: ['p2'],
+      askedBy: 'p2',
+      question: q('durability'),
+      answer: 'Redis의 AOF는 잘 모르겠습니다.',
+      userMentioned: ['Redis'],
+    });
+    expect(r.unknownTechs).toEqual([]);
+    expect(r.pick?.reactionIntent).not.toBe('B11');
   });
   it('되묻기면 모른다고 한 기술이 있어도 pick이 null이다', async () => {
     const { turn } = await service({

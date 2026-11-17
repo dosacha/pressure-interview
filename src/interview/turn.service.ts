@@ -12,7 +12,7 @@ import { generateQuestion } from './calls/question.call';
 import { reviewTurn } from './calls/review.call';
 import { verifyAnswerKey } from './calls/verify.call';
 import { LlmService } from './llm/llm.service';
-import { checkNaming } from './naming';
+import { checkNaming, normalize } from './naming';
 import { pickNext } from './rules';
 import type {
   AnswerInput,
@@ -93,7 +93,13 @@ export class TurnService {
       if (leak) {
         feedback.push(...namingFeedback(naming));
       } else if (premise && !premise.premiseOk) {
-        feedback.push(...premise.problems.map((p) => p.problem));
+        feedback.push(
+          ...(premise.problems.length > 0
+            ? premise.problems.map((p) => p.problem)
+            : [
+                '질문 문장의 기술 전제가 틀렸다는 지적을 받았다. 전제로 쓴 기술 사실을 다시 확인한다.',
+              ]),
+        );
       } else {
         break;
       }
@@ -191,11 +197,11 @@ export class TurnService {
       userMentioned: input.userMentioned,
     });
     // 이미 말한 기술(주제 기술 포함)에 대한 모름은 넘어가지 않는다. 분석이 프롬프트를 어겨 넣어도 여기서 거른다.
-    const unknownTechs = (analysis.unknownTechs ?? []).filter(
-      (t) => !input.userMentioned.includes(t),
-    );
+    const said = new Set(input.userMentioned.map(normalize));
+    const unknownTechs = (analysis.unknownTechs ?? []).filter((t) => !said.has(normalize(t)));
     // 분석이 모른다고 한 기술을 mentionedTechs에도 넣었으면 뺀다. 면접관이 먼저 꺼내도 되는 기술이 되기 때문이다.
-    const mentioned = analysis.mentionedTechs.filter((t) => !unknownTechs.includes(t));
+    const unknown = new Set(unknownTechs.map(normalize));
+    const mentioned = analysis.mentionedTechs.filter((t) => !unknown.has(normalize(t)));
     const userMentioned = [...new Set([...input.userMentioned, ...mentioned])];
     if (analysis.kind === 'clarify')
       return { analysis, pick: null, userMentioned, usage: [usage], unknownTechs };

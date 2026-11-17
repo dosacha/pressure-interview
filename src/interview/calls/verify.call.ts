@@ -156,13 +156,11 @@ export async function verifyAnswerKey(
     schema: VERIFY_SCHEMA,
   });
   const { premiseOk, problems, corrections } = data;
+  const answerKey = applyCorrections(input.question.answerKey, corrections);
   return {
-    data: {
-      premiseOk,
-      problems,
-      answerKey: applyCorrections(input.question.answerKey, corrections),
-    },
-    corrected: corrections.lists.length > 0 || corrections.alternatives.changed,
+    data: { premiseOk, problems, answerKey },
+    // 같은 목록을 다시 내도 고친 것으로 세지 않게 값으로 견준다. applyCorrections는 필드 순서를 지킨다.
+    corrected: JSON.stringify(answerKey) !== JSON.stringify(input.question.answerKey),
     usage,
   };
 }

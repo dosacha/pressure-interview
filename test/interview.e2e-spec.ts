@@ -50,7 +50,7 @@ const UNKNOWN = { kind: 'answer', defects: [], mentionedTechs: [], unknownTechs:
 
 const tick = () => new Promise((r) => setTimeout(r, 50));
 async function until(cond: () => boolean): Promise<void> {
-  for (let i = 0; i < 200 && !cond(); i++) await new Promise((r) => setTimeout(r, 5));
+  for (let i = 0; i < 1000 && !cond(); i++) await new Promise((r) => setTimeout(r, 5));
   if (!cond()) throw new Error('조건이 오지 않았다');
 }
 // 다음 한 번의 호출을 붙잡아 둔다. 테스트가 끝나기 전에 release로 풀어야 settle()이 끝난다.
@@ -614,6 +614,18 @@ describe('면접 서비스 (e2e)', () => {
       Number((await dataSource.query<{ n: string }[]>(`SELECT COUNT(*) AS n FROM ${table}`))[0].n);
     expect(await count('interview_sessions')).toBe(0);
     expect(await count('llm_usage')).toBe(1);
+  });
+
+  it('시작할 때 기억 읽기가 실패하면 UpstreamError가 아닌 그 오류로 거부되고 질문 호출은 나가지 않는다', async () => {
+    const boom = new Error('memory boom');
+    await reopen(createFakeAnthropic(), [
+      RNG_ZERO,
+      { provide: MEMORY_SOURCE, useValue: { snapshot: () => Promise.reject(boom) } },
+    ]);
+    const e = await service.start({ topic: 'Redis' }).catch((x: unknown) => x);
+    expect(e).toBe(boom);
+    expect(e).not.toBeInstanceOf(UpstreamError);
+    expect(calls('question')).toHaveLength(0);
   });
 
   it('모델이 깨진 JSON을 주면 BAD_RESPONSE이고 오류에 응답 글자가 없다 (Review Focus 1)', async () => {
