@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { InterviewScreen } from '@/components/interview-screen';
 import { StartScreen } from '@/components/start-screen';
 
@@ -13,9 +13,16 @@ function initialScreen(): Screen {
   return id === undefined ? { screen: 'start' } : { screen: 'interview', id };
 }
 
+const MISSING = '면접을 찾을 수 없습니다.';
+// 꼴이 틀린 주소는 없는 id와 같게 다룬다: 문장을 보이고 hash를 비운다.
+const badHash = () => location.hash.startsWith('#interview/') && !HASH.test(location.hash);
+
 export function App() {
   const [state, setState] = useState<Screen>(initialScreen);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(() => (badHash() ? MISSING : null));
+  useEffect(() => {
+    if (badHash()) history.replaceState(null, '', '#');
+  }, []);
 
   const go = (next: Screen, message: string | null = null) => {
     history.replaceState(null, '', next.screen === 'interview' ? `#interview/${next.id}` : '#');
@@ -38,7 +45,7 @@ export function App() {
           key={state.id}
           id={state.id}
           onReview={() => go({ screen: 'review', id: state.id })}
-          onMissing={() => go({ screen: 'start' }, '면접을 찾을 수 없습니다.')}
+          onMissing={() => go({ screen: 'start' }, MISSING)}
           onExit={() => go({ screen: 'start' })}
         />
       )}

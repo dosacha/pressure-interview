@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { advance, finish, getInterview, sendAnswer } from '@/api';
 import { ApiError, describeApiError } from '@/lib/api-error';
 import type { InterviewView } from '@/lib/decode';
+import { shouldClearDraft } from '@/lib/draft';
 import { createFirstInputTimer } from '@/lib/first-input-timer';
 
 const BUTTON = 'min-h-11 rounded px-6 text-base disabled:opacity-50';
@@ -19,7 +20,13 @@ export function InterviewScreen(props: {
   const [error, setError] = useState<string | null>(null);
   const busyRef = useRef(false); // 같은 요청이 두 번 나가지 않게 한다. 호출마다 과금된다.
   const timer = useRef(createFirstInputTimer(Date.now));
-  const openTurnId = view?.pending === 'answer' ? view.turns.at(-1)?.id : undefined;
+  const openTurn = view?.pending === 'answer' ? view.turns.at(-1) : undefined;
+  const openTurnId = openTurn?.id;
+  const clarifications = openTurn?.clarifications.length ?? 0;
+  const prevOpen = useRef<{ turnId: string | null; clarifications: number }>({
+    turnId: null,
+    clarifications: 0,
+  });
 
   const refresh = () =>
     getInterview(id).then(setView, (e: unknown) => {
@@ -35,6 +42,13 @@ export function InterviewScreen(props: {
     if (openTurnId !== undefined) timer.current.shown();
   }, [openTurnId]);
 
+  // 앞 질문에 쓰던 답이 새 질문 칸에 남아 잘못 보내지면 과금되므로, 턴이 바뀌거나 되묻기 응답이 붙으면 비운다.
+  useEffect(() => {
+    const next = { turnId: openTurnId ?? null, clarifications };
+    if (shouldClearDraft(prevOpen.current, next)) setDraft('');
+    prevOpen.current = next;
+  }, [openTurnId, clarifications]);
+
   // 모델을 부르는 요청은 한 번에 하나만 보낸다. 실패하면 서버 상태를 다시 읽어 버튼을 맞춘다.
   const run = async (call: () => Promise<InterviewView>, onDone?: () => void) => {
     if (busyRef.current) return;
@@ -46,6 +60,7 @@ export function InterviewScreen(props: {
       onDone?.();
     } catch (e) {
       setError(describeApiError(e).text);
+      // reload 값과 상관없이 늘 다시 읽는다: GET이라 과금이 없고, 답이 저장된 뒤 실패했는지는 읽어야 안다.
       await refresh();
     } finally {
       busyRef.current = false;
