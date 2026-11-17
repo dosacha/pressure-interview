@@ -91,7 +91,35 @@ const render = (first: R1Result['first'], over: Partial<R1Result> = {}) =>
 
 describe('R1 report', () => {
   it('사용량을 합친다', () => {
-    expect(sumUsage(results[0].usage)).toEqual({ input_tokens: 8, output_tokens: 10 });
+    expect(sumUsage(results[0].usage)).toEqual({
+      input_tokens: 8,
+      output_tokens: 10,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+    });
+  });
+  it('캐시 토큰이 있는 사용량도 네 값을 모두 합친다', () => {
+    expect(
+      sumUsage([
+        {
+          input_tokens: 1,
+          output_tokens: 2,
+          cache_creation_input_tokens: 3,
+          cache_read_input_tokens: 4,
+        },
+        {
+          input_tokens: 5,
+          output_tokens: 6,
+          cache_creation_input_tokens: 7,
+          cache_read_input_tokens: 8,
+        },
+      ]),
+    ).toEqual({
+      input_tokens: 6,
+      output_tokens: 8,
+      cache_creation_input_tokens: 10,
+      cache_read_input_tokens: 12,
+    });
   });
   it('검토할 항목이 모두 들어간다', () => {
     const md = renderReport({ startedAt: '2026-11-16T00:00:00Z', results });

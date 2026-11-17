@@ -45,13 +45,21 @@ export interface R1Result {
   answerCount?: number;
 }
 
-export function sumUsage(usages: TokenUsage[]): TokenUsage {
-  return usages.reduce(
+export function sumUsage(usages: TokenUsage[]): Required<TokenUsage> {
+  return usages.reduce<Required<TokenUsage>>(
     (a, u) => ({
       input_tokens: a.input_tokens + u.input_tokens,
       output_tokens: a.output_tokens + u.output_tokens,
+      cache_creation_input_tokens:
+        a.cache_creation_input_tokens + (u.cache_creation_input_tokens ?? 0),
+      cache_read_input_tokens: a.cache_read_input_tokens + (u.cache_read_input_tokens ?? 0),
     }),
-    { input_tokens: 0, output_tokens: 0 },
+    {
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+    },
   );
 }
 
@@ -290,13 +298,17 @@ export function renderReport(run: {
     lines.push('', '지원자 답 생성 호출은 analyze의 모델과 effort를 쓴다.', '');
   }
 
-  lines.push('## 사용량', '', '| 시나리오 | input_tokens | output_tokens |', '|---|---|---|');
-  for (const r of results) {
-    const u = sumUsage(r.usage);
-    lines.push(`| ${r.scenarioId} | ${u.input_tokens} | ${u.output_tokens} |`);
-  }
+  const usageCells = (u: Required<TokenUsage>) =>
+    `${u.input_tokens} | ${u.cache_creation_input_tokens} | ${u.cache_read_input_tokens} | ${u.output_tokens}`;
   lines.push(
-    `| 전체 | ${total.input_tokens} | ${total.output_tokens} |`,
+    '## 사용량',
+    '',
+    '| 시나리오 | input_tokens | cache_creation_input_tokens | cache_read_input_tokens | output_tokens |',
+    '|---|---|---|---|---|',
+  );
+  for (const r of results) lines.push(`| ${r.scenarioId} | ${usageCells(sumUsage(r.usage))} |`);
+  lines.push(
+    `| 전체 | ${usageCells(total)} |`,
     '',
     '사용량은 응답을 만든 시도만 센 것이다. 폴백으로 거절된 시도의 토큰은 빠져 있다. 엔진의 턴(질문 준비나 답 분석)이 오류로 끝나면 그 턴의 사용량도 빠져 있다. 그 턴에서 이미 끝난 호출과 실패한 호출의 토큰이 모두 합계에 들지 않는다. 그 전에 끝난 지원자 답 생성의 토큰은 합계에 들어 있다.',
     '',

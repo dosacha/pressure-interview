@@ -34,7 +34,12 @@ describe('LlmService', () => {
     const out = await call(llm);
     expect(out).toEqual({
       data: { a: 1 },
-      usage: { input_tokens: 10, output_tokens: 5 },
+      usage: {
+        input_tokens: 10,
+        output_tokens: 5,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+      },
       model: 'claude-opus-5-5',
     });
     expect(create).toHaveBeenCalledWith(
@@ -43,7 +48,7 @@ describe('LlmService', () => {
         max_tokens: 16000,
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
-        system: 'S',
+        system: [{ type: 'text', text: 'S', cache_control: { type: 'ephemeral', ttl: '1h' } }],
         messages: [{ role: 'user', content: 'U' }],
         output_config: {
           effort: 'medium',
@@ -52,6 +57,37 @@ describe('LlmService', () => {
       }),
     );
     expect(create.mock.calls[0][0]).not.toHaveProperty('thinking');
+    expect(create.mock.calls[0][0]).not.toHaveProperty('cache_control');
+  });
+  it('복기 호출의 캐시 수명은 5분, 나머지는 1시간이다', async () => {
+    const { llm, create } = await make(ok);
+    const roles = ['review', 'analyze', 'question', 'verify', 'leak'] as const;
+    for (const role of roles) await llm.callJson({ role, system: 'S', user: 'U', schema: {} });
+    const ttls = create.mock.calls.map(
+      ([req]) => (req as { system: { cache_control: unknown }[] }).system[0].cache_control,
+    );
+    expect(ttls).toEqual([
+      { type: 'ephemeral', ttl: '5m' },
+      { type: 'ephemeral', ttl: '1h' },
+      { type: 'ephemeral', ttl: '1h' },
+      { type: 'ephemeral', ttl: '1h' },
+      { type: 'ephemeral', ttl: '1h' },
+    ]);
+  });
+  it('캐시 토큰을 사용량과 기록에 함께 싣는다', async () => {
+    const usage = {
+      input_tokens: 10,
+      output_tokens: 5,
+      cache_creation_input_tokens: 7,
+      cache_read_input_tokens: 9,
+    };
+    const { llm, recorder } = await make({ ...ok, usage });
+    const record = jest.spyOn(recorder, 'record');
+    const out = await call(llm);
+    expect(out.usage).toEqual(usage);
+    expect(record).toHaveBeenCalledWith([
+      expect.objectContaining({ cache_creation_input_tokens: 7, cache_read_input_tokens: 9 }),
+    ]);
   });
   it('모델과 effort는 부른 역할의 설정에서 온다', async () => {
     const { llm, create } = await make(ok, {
@@ -102,6 +138,8 @@ describe('LlmService', () => {
         model: 'claude-opus-5-5',
         input_tokens: 10,
         output_tokens: 5,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
         fallback: false,
       },
     ]);
@@ -111,7 +149,12 @@ describe('LlmService', () => {
     const record = jest.spyOn(recorder, 'record');
     const out = await call(llm);
     expect(record).toHaveBeenCalledTimes(1);
-    expect(out.usage).toEqual({ input_tokens: 10, output_tokens: 5 });
+    expect(out.usage).toEqual({
+      input_tokens: 10,
+      output_tokens: 5,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+    });
   });
 });
 
@@ -122,7 +165,17 @@ describe('usageRows', () => {
         model: 'm',
         usage: { input_tokens: 3, output_tokens: 2, iterations: null },
       }),
-    ).toEqual([{ role: 'analyze', model: 'm', input_tokens: 3, output_tokens: 2, fallback: false }]);
+    ).toEqual([
+      {
+        role: 'analyze',
+        model: 'm',
+        input_tokens: 3,
+        output_tokens: 2,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+        fallback: false,
+      },
+    ]);
   });
   it('거절된 시도와 폴백 응답을 각각 한 줄로 센다', () => {
     const rows = usageRows('question', {
@@ -162,7 +215,15 @@ describe('usageRows', () => {
       },
     });
     expect(rows).toEqual([
-      { role: 'question', model: 'b', input_tokens: 9, output_tokens: 8, fallback: false },
+      {
+        role: 'question',
+        model: 'b',
+        input_tokens: 9,
+        output_tokens: 8,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+        fallback: false,
+      },
     ]);
   });
   it('message도 fallback_message도 아닌 항목은 세지 않는다', () => {
@@ -192,5 +253,35 @@ describe('usageRows', () => {
       },
     });
     expect(rows.map((r) => r.input_tokens)).toEqual([2]);
+  });
+  it('iterations의 항목마다 캐시 토큰을 읽고, 숫자가 아니면 0으로 센다', () => {
+    const rows = usageRows('question', {
+      model: 'b',
+      usage: {
+        input_tokens: 9,
+        output_tokens: 9,
+        iterations: [
+          {
+            type: 'message',
+            model: 'a',
+            input_tokens: 5,
+            output_tokens: 1,
+            cache_creation_input_tokens: 4,
+            cache_read_input_tokens: null,
+          },
+          {
+            type: 'fallback_message',
+            model: 'b',
+            input_tokens: 5,
+            output_tokens: 4,
+            cache_read_input_tokens: 6,
+          },
+        ],
+      },
+    });
+    expect(rows.map((r) => [r.cache_creation_input_tokens, r.cache_read_input_tokens])).toEqual([
+      [4, 0],
+      [0, 6],
+    ]);
   });
 });

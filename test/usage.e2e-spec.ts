@@ -37,14 +37,25 @@ describe('사용량 기록 (e2e)', () => {
     await recorder.run(sessionId, () => llm.callJson(leak));
     await usage.flush();
     expect(await usage.summarize(sessionId)).toEqual([
-      { role: 'leak', model: 'fake-model', inputTokens: 10, outputTokens: 5, calls: 1, fallbacks: 0 },
+      {
+        role: 'leak',
+        model: 'fake-model',
+        inputTokens: 10,
+        cacheCreationTokens: 2,
+        cacheReadTokens: 3,
+        outputTokens: 5,
+        calls: 1,
+        fallbacks: 0,
+      },
     ]);
   });
 
   it('run 밖의 호출은 남기지 않는다', async () => {
     await llm.callJson(leak);
     await usage.flush();
-    const rows = await app.get(DataSource).query<{ n: string }[]>('SELECT COUNT(*) AS n FROM llm_usage');
+    const rows = await app
+      .get(DataSource)
+      .query<{ n: string }[]>('SELECT COUNT(*) AS n FROM llm_usage');
     expect(Number(rows[0].n)).toBe(0);
   });
 

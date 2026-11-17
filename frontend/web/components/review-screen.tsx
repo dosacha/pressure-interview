@@ -333,7 +333,9 @@ export function ReviewScreen(props: { id: string; onExit: () => void }) {
                   <th className="p-2">역할</th>
                   <th className="p-2">모델</th>
                   <th className="p-2">호출 수</th>
-                  <th className="p-2">입력 토큰</th>
+                  <th className="p-2">입력 토큰(캐시 제외)</th>
+                  <th className="p-2">캐시 쓰기 토큰</th>
+                  <th className="p-2">캐시 읽기 토큰</th>
                   <th className="p-2">출력 토큰</th>
                   <th className="p-2">폴백 수</th>
                 </tr>
@@ -345,6 +347,8 @@ export function ReviewScreen(props: { id: string; onExit: () => void }) {
                     <td className="break-all p-2">{u.model}</td>
                     <td className="p-2">{u.calls}</td>
                     <td className="p-2">{u.inputTokens}</td>
+                    <td className="p-2">{u.cacheCreationTokens}</td>
+                    <td className="p-2">{u.cacheReadTokens}</td>
                     <td className="p-2">{u.outputTokens}</td>
                     <td className="p-2">{u.fallbacks}</td>
                   </tr>

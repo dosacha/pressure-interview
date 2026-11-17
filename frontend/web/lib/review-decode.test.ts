@@ -55,6 +55,8 @@ const view = {
       role: 'review',
       model: 'fake-model',
       inputTokens: 10,
+      cacheCreationTokens: 2,
+      cacheReadTokens: 3,
       outputTokens: 5,
       calls: 1,
       fallbacks: 0,
@@ -64,6 +66,17 @@ const view = {
 
 void test('복기 뷰를 통과시킨다', () => {
   assert.deepEqual(decodeReviewView(view), view);
+});
+
+void test('사용량의 캐시 토큰을 읽고, 하나가 빠지면 던진다', () => {
+  const [u] = decodeReviewView(view).usage;
+  assert.equal(u.cacheCreationTokens, 2);
+  assert.equal(u.cacheReadTokens, 3);
+  for (const key of ['cacheCreationTokens', 'cacheReadTokens']) {
+    const missing: Record<string, unknown> = { ...view.usage[0] };
+    delete missing[key];
+    assert.throws(() => decodeReviewView({ ...view, usage: [missing] }), new RegExp(key));
+  }
 });
 
 void test('verdict가 목록 밖이면 던진다', () => {

@@ -98,7 +98,13 @@ export function createFakeAnthropic(): FakeAnthropic {
     return {
       stop_reason: 'end_turn',
       content: [{ type: 'text', text }],
-      usage: { input_tokens: 10, output_tokens: 5, iterations: null },
+      usage: {
+        input_tokens: 10,
+        output_tokens: 5,
+        cache_creation_input_tokens: 2,
+        cache_read_input_tokens: 3,
+        iterations: null,
+      },
       model: 'fake-model',
     };
   }

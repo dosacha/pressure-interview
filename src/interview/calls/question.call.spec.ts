@@ -183,6 +183,20 @@ ${addOn}
       'user 메시지가 덧붙이는 질문이라고 하면, 이 프롬프트에서 직전 답변이라고 한 곳은 모두 user 메시지가 가리키는 그 앞의 답변을 뜻한다.',
     );
   });
+  it('시스템 프롬프트는 면접관이 달라도 글자 하나 다르지 않다', () => {
+    const textbook = { ...input, interviewer: { ...input.interviewer, role: 'textbook' as const } };
+    expect(buildQuestionPrompt(textbook).system).toBe(buildQuestionPrompt(input).system);
+  });
+  it('교과형의 범위와 수준은 user 메시지에 적는다', () => {
+    const level = '학부 전 과목 시험에서 항상 100점을 받는 수준을 전제한다';
+    const textbook = { ...input, interviewer: { ...input.interviewer, role: 'textbook' as const } };
+    const { system, user } = buildQuestionPrompt(textbook);
+    expect(user).toContain(level);
+    expect(system).not.toContain(level);
+    expect(buildQuestionPrompt(input).user).not.toContain(level);
+    expect(textbook.history.length).toBeGreaterThan(0);
+    expect(user.indexOf(level)).toBeLessThan(user.indexOf('지금까지의 대화:'));
+  });
   it('지원자가 말한 기술이 비어도 모른다고 한 기술 줄과 기억 절은 들어간다', () => {
     const { user } = buildQuestionPrompt({
       ...input,

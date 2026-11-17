@@ -1,9 +1,14 @@
 import { AXES, DEFECT_NAMES, DEFECT_TYPES, OWNABLE_AXES } from '../catalog';
-import { Question } from '../types';
+import { PanelMember, Question, ReviewInput } from '../types';
 import { ANALYZE_SCHEMA, analyzeAnswer } from './analyze.call';
+import { buildAnswerKeyPrompt } from './answer-key.call';
+import { buildClarifyPrompt } from './clarify.call';
+import { buildJobRolePrompt } from './job-role.call';
+import { checkPremise } from './premise.call';
+import { buildReviewPrompt } from './review.call';
 import { Corrections, VERIFY_SCHEMA, applyCorrections, verifyAnswerKey } from './verify.call';
 import { LEAK_SCHEMA, detectTechs } from './leak.call';
-import { REQUIRED_RULES } from './question.call';
+import { REQUIRED_RULES, buildQuestionPrompt } from './question.call';
 
 const question: Question = {
   text: '인메모리 PostgreSQL이라면 Redis와 뭐가 다를까요?',
@@ -243,5 +248,178 @@ describe('정답지 검증은 고친 부분만 낸다', () => {
     expect(system).toContain(
       '그 문장만 읽고 무엇이 어떤 사실과 어긋나는지 알 수 있게 구체적으로 쓴다',
     );
+  });
+});
+
+describe('시스템 프롬프트는 입력과 무관하게 고정이다(캐시 접두)', () => {
+  const systemOf = async (call: (llm: { callJson: jest.Mock }) => Promise<unknown>) => {
+    const callJson = jest.fn().mockResolvedValue({
+      data: ANY_REPLY,
+      usage: { input_tokens: 0, output_tokens: 0 },
+      model: 'm',
+    });
+    await call({ callJson });
+    const [[req]] = callJson.mock.calls as [[{ system: string }]];
+    return req.system;
+  };
+  const dba: PanelMember = { id: 'p1', role: 'dba', temperament: 'shaker' };
+  const textbook: PanelMember = { id: 'p3', role: 'textbook', temperament: 'helper' };
+  const other: Question = {
+    text: '쓰기가 읽기보다 훨씬 많아지면 무엇이 먼저 무너질까요?',
+    questionIntent: 'A8',
+    assumption: { axis: 'none', statement: '' },
+    answerKey: {
+      vanishing: [],
+      remaining: [],
+      alternatives: [{ name: 'X', traits: 't' }],
+      keyPoints: ['k'],
+    },
+  };
+  const history = [{ interviewerId: 'p2', text: '앞 질문', answer: '앞 답' }];
+  const qBase = {
+    reactionIntent: null,
+    defect: null,
+    targetAxis: null,
+    userMentioned: [],
+    feedback: [],
+  };
+  const review: ReviewInput = {
+    topic: 'Redis',
+    interviewer: dba,
+    cause: { reactionIntent: null, defect: null },
+    question,
+    clarifications: [],
+    answer: '답',
+    analysis: { kind: 'answer', defects: [], mentionedTechs: [] },
+    followUps: [],
+    knownAssumptions: [],
+  };
+  const clarify = {
+    topic: 'Redis',
+    interviewer: dba,
+    question,
+    questionTechs: [],
+    exchanges: [],
+    ask: '읽기 위주인가요?',
+    userMentioned: [],
+    avoidTechs: [],
+    feedback: [],
+  };
+
+  const pairs: [string, string | Promise<string>, string | Promise<string>][] = [
+    [
+      '질문',
+      buildQuestionPrompt({ ...qBase, topic: 'Redis', interviewer: dba, history: [] }).system,
+      buildQuestionPrompt({
+        ...qBase,
+        topic: 'NodeJS',
+        interviewer: textbook,
+        history,
+        reactionIntent: 'B9',
+        defect: { type: 'wrong', axis: 'durability', note: 'n' },
+        targetAxis: 'identity_swap',
+        userMentioned: ['NodeJS'],
+        feedback: ['f'],
+        avoidTechs: ['Lua'],
+        addOn: true,
+        memory: { retired: [{ axis: 'durability', statement: 's' }], reissue: [], expected: [] },
+      }).system,
+    ],
+    [
+      '정답지 작성',
+      buildAnswerKeyPrompt({
+        topic: 'Redis',
+        interviewer: dba,
+        reactionIntent: null,
+        defect: null,
+        history: [],
+        draft: question,
+      }).system,
+      buildAnswerKeyPrompt({
+        topic: 'NodeJS',
+        interviewer: textbook,
+        reactionIntent: 'B9',
+        defect: { type: 'wrong', axis: 'durability', note: 'n' },
+        addOn: true,
+        history,
+        draft: other,
+      }).system,
+    ],
+    [
+      '전제 검사',
+      systemOf((llm) => checkPremise(llm, { topic: 'Redis', draft: question })),
+      systemOf((llm) => checkPremise(llm, { topic: 'NodeJS', draft: other })),
+    ],
+    [
+      '정답지 검증',
+      systemOf((llm) => verifyAnswerKey(llm, { topic: 'Redis', question })),
+      systemOf((llm) => verifyAnswerKey(llm, { topic: 'NodeJS', question: other })),
+    ],
+    [
+      '흘림 검사',
+      systemOf((llm) => detectTechs(llm, { questionText: question.text, userMentioned: [] })),
+      systemOf((llm) => detectTechs(llm, { questionText: other.text, userMentioned: ['Lua'] })),
+    ],
+    [
+      '답 분석',
+      systemOf((llm) => analyzeAnswer(llm, { topic: 'Redis', question, answer: '답 하나' })),
+      systemOf((llm) =>
+        analyzeAnswer(llm, {
+          topic: 'NodeJS',
+          question: other,
+          answer: '답 둘',
+          userMentioned: ['NodeJS'],
+        }),
+      ),
+    ],
+    [
+      '되묻기 응답',
+      buildClarifyPrompt(clarify).system,
+      buildClarifyPrompt({
+        ...clarify,
+        topic: 'NodeJS',
+        interviewer: textbook,
+        question: other,
+        questionTechs: [{ name: 'NodeJS', role: 'user' }],
+        exchanges: [{ ask: 'a', reply: 'r' }],
+        ask: '다른 되묻기',
+        userMentioned: ['NodeJS'],
+        avoidTechs: ['Lua'],
+        feedback: ['f'],
+      }).system,
+    ],
+    ['직무 고르기', buildJobRolePrompt('Redis').system, buildJobRolePrompt('NodeJS').system],
+    [
+      '복기',
+      buildReviewPrompt(review).system,
+      buildReviewPrompt({
+        ...review,
+        topic: 'NodeJS',
+        interviewer: textbook,
+        cause: { reactionIntent: 'B6', defect: { type: 'vague', axis: 'scale', note: 'n' } },
+        question: other,
+        clarifications: [{ ask: 'a', reply: 'r' }],
+        answer: '다른 답',
+        analysis: {
+          kind: 'answer',
+          defects: [{ type: 'wrong', axis: 'durability', note: 'n' }],
+          mentionedTechs: ['NodeJS'],
+        },
+        followUps: [
+          {
+            interviewerId: 'p2',
+            addOn: false,
+            reactionIntent: 'B8',
+            defect: { type: 'wrong', axis: 'durability', note: 'n' },
+            text: '후속',
+          },
+        ],
+        knownAssumptions: [{ key: 'turn:t1', statement: '앞선 가정' }],
+      }).system,
+    ],
+  ];
+
+  it.each(pairs)('%s', async (_name, a, b) => {
+    expect(await b).toBe(await a);
   });
 });

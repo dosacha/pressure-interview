@@ -58,6 +58,8 @@ export interface UsageSummary {
   role: string;
   model: string;
   inputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
   outputTokens: number;
   calls: number;
   fallbacks: number;
@@ -254,6 +256,8 @@ export function decodeReviewView(v: unknown): ReviewView {
         role: str(u.role, 'usage.role'),
         model: str(u.model, 'usage.model'),
         inputTokens: num(u.inputTokens, 'usage.inputTokens'),
+        cacheCreationTokens: num(u.cacheCreationTokens, 'usage.cacheCreationTokens'),
+        cacheReadTokens: num(u.cacheReadTokens, 'usage.cacheReadTokens'),
         outputTokens: num(u.outputTokens, 'usage.outputTokens'),
         calls: num(u.calls, 'usage.calls'),
         fallbacks: num(u.fallbacks, 'usage.fallbacks'),

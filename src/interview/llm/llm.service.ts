@@ -32,12 +32,24 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
 }
 
+const tokens = (v: unknown): number => (typeof v === 'number' ? v : 0);
+
+// 캐시 수명. 면접 중 호출은 지원자가 답을 쓰는 동안 다음 호출까지 5분을 넘길 수 있어 1시간으로 둔다(쓰기 2배, 읽기 0.05배).
+// 복기는 세 개씩 몰아 불러 5분 안에 끝나므로 5분으로 둔다(쓰기 1.25배).
+const cacheTtl = (role: CallRole): '5m' | '1h' => (role === 'review' ? '5m' : '1h');
+
 /** iterations가 있으면 거절된 시도까지 한 줄씩, 없으면 최상위 usage 한 줄. 둘을 함께 세지 않는다. */
 export function usageRows(
   role: CallRole,
   res: {
     model: string;
-    usage: { input_tokens: number; output_tokens: number; iterations?: unknown };
+    usage: {
+      input_tokens: number;
+      output_tokens: number;
+      cache_creation_input_tokens?: number | null;
+      cache_read_input_tokens?: number | null;
+      iterations?: unknown;
+    };
   },
 ): UsageRow[] {
   const { iterations } = res.usage;
@@ -51,6 +63,8 @@ export function usageRows(
         model: typeof it.model === 'string' ? it.model : res.model,
         input_tokens: it.input_tokens,
         output_tokens: it.output_tokens,
+        cache_creation_input_tokens: tokens(it.cache_creation_input_tokens),
+        cache_read_input_tokens: tokens(it.cache_read_input_tokens),
         fallback: it.type === 'fallback_message',
       });
     }
@@ -63,6 +77,8 @@ export function usageRows(
       model: res.model,
       input_tokens: res.usage.input_tokens,
       output_tokens: res.usage.output_tokens,
+      cache_creation_input_tokens: tokens(res.usage.cache_creation_input_tokens),
+      cache_read_input_tokens: tokens(res.usage.cache_read_input_tokens),
       fallback: false,
     },
   ];
@@ -82,7 +98,13 @@ export class LlmService implements JsonLlm {
       max_tokens: 16000,
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
-      system: req.system,
+      system: [
+        {
+          type: 'text',
+          text: req.system,
+          cache_control: { type: 'ephemeral', ttl: cacheTtl(req.role) },
+        },
+      ],
       messages: [{ role: 'user', content: req.user }],
       output_config: {
         effort: this.config.effort[req.role],
@@ -98,7 +120,12 @@ export class LlmService implements JsonLlm {
     const data: unknown = JSON.parse(text.text);
     return {
       data: data as T,
-      usage: { input_tokens: res.usage.input_tokens, output_tokens: res.usage.output_tokens },
+      usage: {
+        input_tokens: res.usage.input_tokens,
+        output_tokens: res.usage.output_tokens,
+        cache_creation_input_tokens: tokens(res.usage.cache_creation_input_tokens),
+        cache_read_input_tokens: tokens(res.usage.cache_read_input_tokens),
+      },
       model: res.model,
     };
   }

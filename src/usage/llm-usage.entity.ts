@@ -17,6 +17,12 @@ export class LlmUsage {
   @Column({ name: 'input_tokens', type: 'integer' })
   inputTokens!: number;
 
+  @Column({ name: 'cache_creation_input_tokens', type: 'integer' })
+  cacheCreationInputTokens!: number;
+
+  @Column({ name: 'cache_read_input_tokens', type: 'integer' })
+  cacheReadInputTokens!: number;
+
   @Column({ name: 'output_tokens', type: 'integer' })
   outputTokens!: number;
 

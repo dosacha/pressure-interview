@@ -8,6 +8,8 @@ export interface UsageSummary {
   role: string;
   model: string;
   inputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
   outputTokens: number;
   calls: number;
   fallbacks: number;
@@ -36,6 +38,8 @@ export class UsageService implements OnModuleInit {
           callRole: r.role,
           model: r.model,
           inputTokens: r.input_tokens,
+          cacheCreationInputTokens: r.cache_creation_input_tokens,
+          cacheReadInputTokens: r.cache_read_input_tokens,
           outputTokens: r.output_tokens,
           fallback: r.fallback,
         })),
@@ -64,6 +68,8 @@ export class UsageService implements OnModuleInit {
       .select('u.call_role', 'role')
       .addSelect('u.model', 'model')
       .addSelect('SUM(u.input_tokens)', 'inputTokens')
+      .addSelect('SUM(u.cache_creation_input_tokens)', 'cacheCreationTokens')
+      .addSelect('SUM(u.cache_read_input_tokens)', 'cacheReadTokens')
       .addSelect('SUM(u.output_tokens)', 'outputTokens')
       .addSelect('COUNT(*)', 'calls')
       .addSelect('COUNT(*) FILTER (WHERE u.fallback)', 'fallbacks')
@@ -77,6 +83,8 @@ export class UsageService implements OnModuleInit {
       role: r.role,
       model: r.model,
       inputTokens: Number(r.inputTokens),
+      cacheCreationTokens: Number(r.cacheCreationTokens),
+      cacheReadTokens: Number(r.cacheReadTokens),
       outputTokens: Number(r.outputTokens),
       calls: Number(r.calls),
       fallbacks: Number(r.fallbacks),

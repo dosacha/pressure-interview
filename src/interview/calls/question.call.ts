@@ -140,7 +140,7 @@ ${REQUIRED_RULES}
 
 ## 면접관
 
-기술 지식은 시니어 수준으로 완벽하다고 전제한다. 지원자의 답이 어디까지 맞고 무엇이 빠졌는지 정확히 알아봐야 반응이 의미를 갖기 때문이다.${role.type === 'textbook' ? `\n\n${TEXTBOOK_PERSONA}` : ''}
+기술 지식은 시니어 수준으로 완벽하다고 전제한다. 지원자의 답이 어디까지 맞고 무엇이 빠졌는지 정확히 알아봐야 반응이 의미를 갖기 때문이다.
 
 이 도구에는 코딩 테스트가 없다. 코드를 쓰게 하거나 코딩 문제의 풀이를 말로 설명하게 하는 질문은 하지 않는다.
 
@@ -203,6 +203,7 @@ assumption.statement에는 바뀐 가정을 기술 이름 없이 한 문장으�
     `- 주로 확인하는 질문 의도: ${role.intents.map((id) => `${id} ${QUESTION_INTENTS[id]}`).join(', ')}`,
     '',
   );
+  if (role.type === 'textbook') lines.push(TEXTBOOK_PERSONA, '');
 
   if (input.history.length > 0) {
     lines.push('지금까지의 대화:');
