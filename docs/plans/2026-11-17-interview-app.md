@@ -989,6 +989,75 @@ void test('ApiError가 아닌 오류는 일반 문장', () => { /* new Error('x'
 
 ---
 
+## 체크포인트 A 뒤의 변경 (2026-11-17)
+
+체크포인트 A의 기록과 사용자 [결정]은 [`docs/a-review.md`](../a-review.md)에 있다. 그 결정으로 A부의 구현이 아래처럼 바뀌었다. 이 절은 Task 4·5·7의 해당 설명보다 우선하고, B부의 태스크는 이 절의 인터페이스를 쓴다.
+
+### Task A1: 한 질문에서 묻는 수 (`9e1c6cc`, `1b7e2d2`)
+
+- **[결정]** 질문은 한 번에 최대 두 가지를 묻는다. 웬만하면 하나만 묻는다.
+- `REQUIRED_RULES`의 "질문은 한 번에 하나만 한다. 질문 의도는 말하지 않는다." 줄을 둘로 나누고, 앞 줄을 "한 질문에서 묻는 것은 하나다. 꼭 이어서 물어야 할 때만 둘까지 묻고, 셋 이상은 묻지 않는다."로 바꿨다. 이유 문단을 질문 프롬프트에 더했다.
+- [제안] 물음 수는 프롬프트 규칙으로만 지키고 코드로 세지 않는다. 물음표나 어미로 세면 부정확하고, 다시 만들면 대기가 더 늘기 때문이다.
+
+### Task A2: 정답지를 질문 뒤에서 만든다 (`5e1f28b`, `45bf313`)
+
+- **[결정]** `docs/a-review.md` 6장의 A(정답지를 질문 뒤로 미루기)와 B(검증이 고친 부분만 내기)를 B부보다 먼저 한다. effort는 medium으로 내린다.
+- [제안] effort의 범위는 질문 생성(`question`)과 검증(`verify`) 두 역할로 읽었다. 분석(medium)과 흘림 검사(low)는 그대로이고, Task 10의 복기 역할(`review`)은 P10대로 high다.
+
+**바뀐 흐름**
+
+1. 질문 호출은 질문 문장, 질문 의도, 바뀐 가정만 쓴다. 정답지는 쓰지 않는다.
+2. 흘림 검사와 이름 검사는 그대로다. 가정을 바꾼 질문은 보여 주기 전에 전제만 짧게 검사한다(`checkPremise`). 전제가 틀리면 다시 만든다. 설계 6.2-6을 지키는 곳이 여기다.
+3. 질문을 저장하고 화면에 낸다. 턴의 `question.answerKey`는 null이다.
+4. 뒤에서 정답지를 쓰고(`writeAnswerKey`) 검증한다(`verifyAnswerKey`). 가정이 있든 없든 모든 질문에 한다. 검증은 문제 목록과 고친 필드만 출력하고, 코드가 원래 정답지에 반영한다(`applyCorrections`). 화면에 나간 뒤의 검증에서 전제가 틀렸다고 나와도 질문은 다시 만들지 않고 `verification`에 남긴다.
+5. 답이 오면 분석 전에 정답지를 맞춘다. 뒤 작업이 돌고 있으면 기다리고, 실패했거나 서버가 다시 떴으면 그때 만든다. 이때 실패하면 답은 저장된 채 `UpstreamError`가 나가고 `advance`가 정답지 만들기부터 이어 간다.
+
+**인터페이스 (Task 4·7의 것을 대체)**
+
+```ts
+// src/interview/types.ts
+export interface QuestionDraft { text: string; questionIntent: QuestionIntentId; assumption: { axis: AxisId | 'none'; statement: string } }
+export interface Question extends QuestionDraft { answerKey: AnswerKey }
+export type StoredQuestion = QuestionDraft & { answerKey: AnswerKey | null };   // 턴의 question 컬럼
+export interface PremiseCheck { premiseOk: boolean; problems: { field: 'text' | 'statement'; problem: string }[] }
+export interface PreparedDraft {
+  draft: QuestionDraft; premise: PremiseCheck | null;
+  flags: { leak: boolean; premise: boolean };            // premise는 보여 주기 전 전제 검사의 결과만 뜻한다
+  attempts: { draft: QuestionDraft; naming: NamingResult; premise: PremiseCheck | null; techs: TechMention[] }[];
+  usage: TokenUsage[];
+}
+export interface AnswerKeyInput { topic; interviewer; reactionIntent; defect; addOn?; history; draft: QuestionDraft }
+export interface CompletedQuestion { question: Question; verification: Verification; answerKeyCorrected: boolean; usage: TokenUsage[] }
+// ClarifyInput.question은 QuestionDraft다. AnswerInput.question은 Question 그대로다.
+
+// src/interview/turn.service.ts
+prepareDraft(input: QuestionInput): Promise<PreparedDraft>;
+completeQuestion(input: AnswerKeyInput): Promise<CompletedQuestion>;
+
+// src/interview/calls
+writeAnswerKey(llm, input: AnswerKeyInput)                    // answer-key.call.ts, 역할 'question'
+checkPremise(llm, { topic, draft })                           // premise.call.ts, 역할 'verify'
+verifyAnswerKey(llm, { topic, question }): Promise<{ data: Verification; corrected: boolean; usage: TokenUsage }>
+applyCorrections(key: AnswerKey, corrections: Corrections): AnswerKey
+```
+
+- 없어진 것: `TurnService.prepareQuestion`, `TurnService.verifyLate`, `PreparedQuestion`, 세션의 사후 검증 시작과 반영(`startLateVerification`, `applyLateVerification`). R1 실행기는 `prepareDraft` → 저장 → `completeQuestion`을 직접 부른다.
+- `REQUIRED_RULES`는 11줄이다. "숨은 정답지는 정확해야 한다…" 줄은 정답지 프롬프트로 옮겼다. 질문 호출과 되묻기 호출이 정답지를 쓰지 않기 때문이다.
+- 기본 effort: `question`과 `verify`가 medium이다(`src/config/engine.config.ts`, `.env.example`).
+- 가짜 Anthropic 클라이언트의 호출 종류에 `answerKey`와 `premise`가 더해졌다.
+
+**B부가 맞춰야 할 것**
+
+- 턴의 `question`은 `StoredQuestion`이다. 복기 대상 턴(답이 있고 분석이 `answer`인 턴)은 분석 전에 정답지를 맞추므로 정답지가 있다. `ReviewInput.question`과 `ReviewTurnView.answerKey`를 만들 때 타입을 좁히고, null이면 오류를 던진다(면접 서비스의 분석과 같은 처리).
+- `verification`은 뒤 작업이 끝난 모든 질문에 있다. Task 12의 `premiseFlag` 규칙(`prepared.flags.premise`이거나 `verification.premiseOk`가 false)은 그대로 쓴다.
+- `prepared.attempts`의 항목은 `{ draft, naming, premise, techs }`다. 2026-11-17 이전에 끝난 면접의 행은 예전 모양(`question`, `verification`)으로 남아 있다. 복기는 `attempts`를 읽지 않는다.
+- 복기 e2e는 면접을 끝낸 뒤 `InterviewService.settle()`로 뒤 작업을 끝내고 시작한다. 답하지 않은 마지막 턴의 정답지 작성이 아직 돌고 있을 수 있기 때문이다.
+- Task 11이 질문 프롬프트에서 빼는 "저장 매체 가정" 문장은 그대로 질문 프롬프트에 있다.
+
+**확인한 범위**: 단위 테스트 196개, e2e 64개(임시 PostgreSQL, 가짜 모델 응답), typecheck, lint, 가짜 응답 앱으로 화면 한 판. 실제 모델로는 돌리지 않았다. 대기가 얼마나 줄었는지와 medium에서의 질문·정답지 품질은 다음 유료 실행에서 잰다.
+
+---
+
 # B부: 복기, 기억, 추이
 
 ### Task 10: 복기 재검사 호출
