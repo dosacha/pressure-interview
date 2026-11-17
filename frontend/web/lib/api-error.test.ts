@@ -25,6 +25,17 @@ void test('나머지 code의 문장', () => {
   assert.equal(describeApiError(new ApiError(404, 'NOT_FOUND')).text, '면접을 찾을 수 없습니다.');
 });
 
+void test('복기 경로의 code 문장', () => {
+  assert.deepEqual(describeApiError(new ApiError(409, 'INTERVIEW_NOT_FINISHED')), {
+    text: '아직 끝나지 않은 면접입니다. 면접을 끝낸 뒤에 복기를 볼 수 있습니다.',
+    reload: false,
+  });
+  assert.deepEqual(describeApiError(new ApiError(409, 'NOT_REVIEWABLE')), {
+    text: '이 질문은 복기에서 고칠 수 없습니다. 화면을 새로 고칩니다.',
+    reload: true,
+  });
+});
+
 void test('ApiError가 아닌 오류는 일반 문장', () => {
   assert.deepEqual(describeApiError(new Error('x')), {
     text: '문제가 생겼습니다. 잠시 뒤 다시 시도해 주세요.',

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { listInterviews, startInterview } from '@/api';
+import { getPendingTopics, listInterviews, startInterview } from '@/api';
+import { StatsPanel } from '@/components/stats-panel';
 import { describeApiError } from '@/lib/api-error';
 import type { InterviewListItem } from '@/lib/decode';
 
@@ -15,10 +16,12 @@ export function StartScreen(props: {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<InterviewListItem[]>([]);
+  const [topics, setTopics] = useState<string[]>([]);
   const sending = useRef(false); // state는 다음 렌더에야 바뀌므로, 두 번 누름은 ref로 막는다.
 
   useEffect(() => {
     listInterviews().then(setItems, () => setError('최근 면접을 불러오지 못했습니다.'));
+    getPendingTopics().then(setTopics, () => setError('다시 연습할 주제를 불러오지 못했습니다.'));
   }, []);
 
   const submit = (e: FormEvent) => {
@@ -88,6 +91,28 @@ export function StartScreen(props: {
         )}
       </form>
 
+      {topics.length > 0 && (
+        <section aria-labelledby="pending-topics" className="mb-8">
+          <h2 id="pending-topics" className="mb-2 text-lg font-semibold">
+            다시 연습할 가정이 남은 주제
+          </h2>
+          <ul className="flex flex-wrap gap-2">
+            {topics.map((t) => (
+              <li key={t}>
+                <button
+                  type="button"
+                  disabled={starting}
+                  className="min-h-11 break-words rounded border border-line bg-card px-4 text-left"
+                  onClick={() => setTopic(t)}
+                >
+                  {t}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section aria-labelledby="recent">
         <h2 id="recent" className="mb-2 text-lg font-semibold">
           최근 면접
@@ -122,6 +147,7 @@ export function StartScreen(props: {
           </ul>
         )}
       </section>
+      <StatsPanel />
     </>
   );
 }

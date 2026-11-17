@@ -49,6 +49,46 @@ async function main(): Promise<void> {
           : { axis: 'none', statement: '' },
       };
     });
+    // 결함 판정이 화면에 보이도록 분석은 결함 하나를 적는다.
+    fake.on('analyze', {
+      kind: 'answer',
+      defects: [{ type: 'vague', axis: 'scale', note: '규모를 숫자로 말하지 않았다' }],
+      mentionedTechs: [],
+      unknownTechs: [],
+    });
+    // 복기 화면에서 판정이 모두 보이도록 돌려 가며 준다. 결함과 질문의 index는 프롬프트에 적힌 번호 안에서 고른다.
+    const DEFECT_VERDICTS = ['valid', 'misjudged'] as const;
+    const REACTION_VERDICTS = ['valid_point', 'misjudgment', 'intended_test'] as const;
+    const RESULTS = ['well', 'wobbly', 'wrong'] as const;
+    let d = 0;
+    let r = 0;
+    let a = 0;
+    fake.on('review', (params) => {
+      const [{ content: user }] = params.messages as { content: string }[];
+      const [, defectPart = '', followPart = ''] =
+        user.split(/면접 중 분석의 결함:|이 답에서 나온 질문:/);
+      const count = (part: string) => (part.match(/^\[\d+\] /gm) ?? []).length;
+      const withAssumption = !user.includes('바뀐 가정: 없음');
+      return {
+        intent: { aimed: d % 2 === 0, note: '가짜 복기의 의도 판정입니다.' },
+        defects: Array.from({ length: count(defectPart) }, (_, index) => ({
+          index,
+          verdict: DEFECT_VERDICTS[d++ % DEFECT_VERDICTS.length],
+          note: '가짜 복기의 결함 판정입니다.',
+        })),
+        reactions: Array.from({ length: count(followPart) }, (_, index) => ({
+          index,
+          verdict: REACTION_VERDICTS[r++ % REACTION_VERDICTS.length],
+          note: '가짜 복기의 반응 판정입니다.',
+        })),
+        assumption: {
+          result: withAssumption ? RESULTS[a++ % RESULTS.length] : 'none',
+          note: withAssumption ? '가짜 복기의 가정 판정입니다.' : '',
+          sameAs: null,
+        },
+        keyProblems: [],
+      };
+    });
     const app = await createTestApp(fake);
     closing = () => app.close();
     // Nest 라우터 뒤에는 경로를 더할 수 없어, 요청을 받는 서버에서 먼저 가로챈다. src/에는 넣지 않는다.

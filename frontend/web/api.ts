@@ -5,9 +5,21 @@ import {
   type InterviewListItem,
   type InterviewView,
 } from '@/lib/decode';
+import {
+  decodeReviewView,
+  decodeStats,
+  decodeTopics,
+  type AssumptionResult,
+  type ReviewView,
+  type Stats,
+} from '@/lib/review-decode';
 
 // 자동 재시도는 하지 않는다. 다시 보내면 모델 호출 과금이 한 번 더 일어날 수 있어 사용자가 버튼으로 정한다.
-async function request(method: 'GET' | 'POST', path: string, body?: unknown): Promise<unknown> {
+async function request(
+  method: 'GET' | 'POST' | 'PATCH',
+  path: string,
+  body?: unknown,
+): Promise<unknown> {
   const res = await fetch(`/v1${path}`, {
     method,
     cache: 'no-store',
@@ -47,3 +59,28 @@ export const sendAnswer = (
 export const advance = (id: string) => view('POST', `/interviews/${id}/advance`);
 
 export const finish = (id: string) => view('POST', `/interviews/${id}/finish`);
+
+// 응답의 status는 쓰지 않는다. 진행은 getReview로 묻는다.
+export async function startReview(id: string): Promise<void> {
+  await request('POST', `/interviews/${id}/review`);
+}
+
+export async function getReview(id: string): Promise<ReviewView> {
+  return decodeReviewView(await request('GET', `/interviews/${id}/review`));
+}
+
+export async function patchTurn(
+  id: string,
+  turnId: string,
+  patch: { surprise?: 'expected' | 'unexpected'; assumptionResult?: AssumptionResult },
+): Promise<ReviewView> {
+  return decodeReviewView(await request('PATCH', `/interviews/${id}/turns/${turnId}`, patch));
+}
+
+export async function getPendingTopics(): Promise<string[]> {
+  return decodeTopics(await request('GET', '/memory/topics'));
+}
+
+export async function getStats(): Promise<Stats> {
+  return decodeStats(await request('GET', '/stats'));
+}

@@ -1,31 +1,42 @@
 import { useEffect, useState } from 'react';
 import { InterviewScreen } from '@/components/interview-screen';
+import { ReviewScreen } from '@/components/review-screen';
 import { StartScreen } from '@/components/start-screen';
 
 type Screen =
   { screen: 'start' } | { screen: 'interview'; id: string } | { screen: 'review'; id: string };
 
-const HASH = /^#interview\/([0-9a-f-]{36})$/i;
+const HASH = /^#(interview|review)\/([0-9a-f-]{36})$/i;
 
-// 라우터 없이 화면 상태만 둔다. 면접 중인 id만 hash에 적어 새로고침해도 돌아온다.
+// 라우터 없이 화면 상태만 둔다. 면접과 복기의 id를 hash에 적어 새로고침해도 돌아온다.
 function initialScreen(): Screen {
-  const id = HASH.exec(location.hash)?.[1];
-  return id === undefined ? { screen: 'start' } : { screen: 'interview', id };
+  const m = HASH.exec(location.hash);
+  if (m === null) return { screen: 'start' };
+  return { screen: m[1].toLowerCase() === 'review' ? 'review' : 'interview', id: m[2] };
 }
 
 const MISSING = '면접을 찾을 수 없습니다.';
 // 꼴이 틀린 주소는 없는 id와 같게 다룬다: 문장을 보이고 hash를 비운다.
-const badHash = () => location.hash.startsWith('#interview/') && !HASH.test(location.hash);
+const badHash = () => /^#(interview|review)\//i.test(location.hash) && !HASH.test(location.hash);
 
 export function App() {
   const [state, setState] = useState<Screen>(initialScreen);
   const [notice, setNotice] = useState<string | null>(() => (badHash() ? MISSING : null));
   useEffect(() => {
     if (badHash()) history.replaceState(null, '', '#');
+    // 주소창에서 hash만 바꾸면 새로 불러오지 않으므로 여기서 화면을 맞춘다. replaceState는 이 사건을 내지 않는다.
+    const onHash = () => {
+      const bad = badHash();
+      if (bad) history.replaceState(null, '', '#');
+      setNotice(bad ? MISSING : null);
+      setState(initialScreen());
+    };
+    addEventListener('hashchange', onHash);
+    return () => removeEventListener('hashchange', onHash);
   }, []);
 
   const go = (next: Screen, message: string | null = null) => {
-    history.replaceState(null, '', next.screen === 'interview' ? `#interview/${next.id}` : '#');
+    history.replaceState(null, '', next.screen === 'start' ? '#' : `#${next.screen}/${next.id}`);
     setNotice(message);
     setState(next);
   };
@@ -50,19 +61,7 @@ export function App() {
         />
       )}
       {state.screen === 'review' && (
-        <section aria-labelledby="review-title">
-          <h2 id="review-title" className="mb-2 text-lg font-semibold">
-            복기
-          </h2>
-          <p className="mb-4">복기는 아직 준비 중입니다.</p>
-          <button
-            type="button"
-            className="min-h-11 rounded border border-line bg-card px-4"
-            onClick={() => go({ screen: 'start' })}
-          >
-            처음으로
-          </button>
-        </section>
+        <ReviewScreen key={state.id} id={state.id} onExit={() => go({ screen: 'start' })} />
       )}
     </main>
   );

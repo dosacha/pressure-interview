@@ -31,19 +31,20 @@ export interface InterviewListItem {
 
 type Raw = Record<string, unknown>;
 
-function bad(what: string): never {
+// 아래 넷과 bad는 review-decode.ts도 쓴다.
+export function bad(what: string): never {
   throw new Error(`서버 응답의 모양이 다르다: ${what}`);
 }
-function obj(v: unknown, what: string): Raw {
+export function obj(v: unknown, what: string): Raw {
   return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Raw) : bad(what);
 }
-function str(v: unknown, what: string): string {
+export function str(v: unknown, what: string): string {
   return typeof v === 'string' ? v : bad(what);
 }
-function num(v: unknown, what: string): number {
+export function num(v: unknown, what: string): number {
   return typeof v === 'number' ? v : bad(what);
 }
-function arr(v: unknown, what: string): unknown[] {
+export function arr(v: unknown, what: string): unknown[] {
   return Array.isArray(v) ? (v as unknown[]) : bad(what);
 }
 function status(v: unknown): 'in_progress' | 'finished' {

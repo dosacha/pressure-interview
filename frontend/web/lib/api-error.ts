@@ -16,6 +16,14 @@ const BY_CODE: Record<string, { text: string; reload: boolean }> = {
   INTERVIEW_FINISHED: { text: '끝난 면접입니다.', reload: true },
   INVALID_INPUT: { text: '입력을 확인해 주세요.', reload: false },
   NOT_FOUND: { text: '면접을 찾을 수 없습니다.', reload: false },
+  INTERVIEW_NOT_FINISHED: {
+    text: '아직 끝나지 않은 면접입니다. 면접을 끝낸 뒤에 복기를 볼 수 있습니다.',
+    reload: false,
+  },
+  NOT_REVIEWABLE: {
+    text: '이 질문은 복기에서 고칠 수 없습니다. 화면을 새로 고칩니다.',
+    reload: true,
+  },
 };
 
 export function describeApiError(e: unknown): { text: string; reload: boolean } {
