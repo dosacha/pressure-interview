@@ -219,6 +219,7 @@ export function ReviewScreen(props: { id: string; onExit: () => void }) {
   const [view, setView] = useState<ReviewView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [statsVersion, setStatsVersion] = useState(0);
   const busyRef = useRef(false); // 복기 만들기는 과금되므로 두 번 누름을 ref로 막는다.
   const signal = useRef<AbortSignal | null>(null);
 
@@ -260,12 +261,17 @@ export function ReviewScreen(props: { id: string; onExit: () => void }) {
     }
   };
 
-  const create = () => void exclusive(() => follow(signal.current!, () => startReview(id)));
+  const create = () =>
+    void exclusive(async () => {
+      await follow(signal.current!, () => startReview(id));
+      setStatsVersion((n) => n + 1);
+    });
 
   const patch = (turnId: string, body: Parameters<typeof patchTurn>[2]) =>
     void exclusive(async () => {
       try {
         setView(await patchTurn(id, turnId, body));
+        setStatsVersion((n) => n + 1);
       } catch (e) {
         const { text, reload } = describeApiError(e);
         setError(text);
@@ -390,7 +396,7 @@ export function ReviewScreen(props: { id: string; onExit: () => void }) {
         </ol>
       )}
 
-      <StatsPanel />
+      <StatsPanel version={statsVersion} />
       <button type="button" className="min-h-11 text-muted underline" onClick={props.onExit}>
         처음으로
       </button>

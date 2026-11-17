@@ -8,13 +8,14 @@ export const seconds = (ms: number | null) =>
 const percent = (r: number | null) => (r === null ? '표시 없음' : `${Math.round(r * 100)}%`);
 
 // 목표치는 보여 주지 않는다. 지난 면접과 견주는 숫자만 둔다.
-export function StatsPanel() {
+// version이 바뀌면 다시 읽는다. 복기 화면에서 예상 표시나 가정 결과를 고치면 추이가 달라지기 때문이다.
+export function StatsPanel(props: { version?: number }) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getStats().then(setStats, (e: unknown) => setError(describeApiError(e).text));
-  }, []);
+  }, [props.version]);
 
   return (
     <section aria-labelledby="stats-title" className="mt-8">
