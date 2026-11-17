@@ -40,7 +40,7 @@ describe('question.call', () => {
     expect(system).not.toContain('정답지는 판정과 상관없이 사실대로 쓴다');
     // 무엇을 숨기고 왜 숨기는지는 남는다.
     expect(system).toContain('복기');
-    expect(system).toContain('질문 문장에 넣은 기술 사실(가정 변경의 전제 등)도 정확해야 한다.');
+    expect(system).toContain('질문 문장에 넣은 기술 사실(가정 변경의 전제 등)은 정확해야 한다.');
   });
   it('REQUIRED_RULES에 정답지 정확성 줄이 없다', () => {
     expect(REQUIRED_RULES).not.toContain('숨은 정답지는 정확해야 한다');
