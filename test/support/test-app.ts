@@ -18,7 +18,8 @@ export async function createTestApp(
     builder = builder.overrideProvider(provide).useValue(useValue);
   }
   const moduleRef = await builder.compile();
-  const app = moduleRef.createNestApplication<NestExpressApplication>();
+  // 실패 경로 테스트가 서버 로그로 테스트 출력을 더럽히지 않게 한다.
+  const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: false });
   configureApp(app);
   await app.init();
   return app;
