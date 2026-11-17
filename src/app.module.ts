@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { engineConfig } from './config/engine.config';
+import { interviewConfig } from './config/interview.config';
 import { validateEnvironment, type EnvironmentVariables } from './config/environment';
 import { createDataSourceOptions } from './database/database.options';
 import { HealthController } from './health/health.controller';
@@ -15,7 +16,7 @@ import { UsageModule } from './usage/usage.module';
       cache: true,
       isGlobal: true,
       validate: validateEnvironment,
-      load: [engineConfig],
+      load: [engineConfig, interviewConfig],
       // 테스트가 사용자의 .env(실제 키, 바꾼 설정)에 흔들리지 않게 한다.
       ignoreEnvFile: process.env.NODE_ENV === 'test',
     }),
