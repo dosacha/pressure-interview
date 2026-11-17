@@ -100,3 +100,23 @@ export interface AnswerResult {
   userMentioned: string[];
   usage: TokenUsage[];
 }
+
+export interface AssumptionRef {
+  axis: AxisId;
+  statement: string;
+}
+export interface QuestionMemory {
+  retired: AssumptionRef[];
+  reissue: AssumptionRef[];
+  expected: AssumptionRef[];
+}
+// 기다리는 덧붙이기와, 그것을 낳은 답의 턴
+export interface PendingSecondary {
+  choice: PickChoice;
+  causeTurnId: string;
+}
+export interface Clarification {
+  ask: string;
+  reply: string;
+  leak: boolean;
+}

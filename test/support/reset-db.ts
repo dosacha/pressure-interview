@@ -1,7 +1,12 @@
 import type { DataSource } from 'typeorm';
 
-// Task 2가 테이블 이름을 채운다. 세션에 FK가 없는 테이블도 포함해야 한다.
-const TABLES: string[] = [];
+// 세션에 FK가 없는 llm_usage도 포함한다.
+const TABLES: string[] = [
+  'interview_turns',
+  'interview_sessions',
+  'assumption_records',
+  'llm_usage',
+];
 
 /** e2e 전용 DB의 테이블을 모두 비운다. 다른 DB면 던진다. */
 export async function resetDb(dataSource: DataSource): Promise<void> {
