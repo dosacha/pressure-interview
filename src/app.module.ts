@@ -8,6 +8,7 @@ import { validateEnvironment, type EnvironmentVariables } from './config/environ
 import { createDataSourceOptions } from './database/database.options';
 import { HealthController } from './health/health.controller';
 import { EngineModule } from './interview/engine.module';
+import { ReviewModule } from './review/review.module';
 import { SessionModule } from './session/session.module';
 import { UsageModule } from './usage/usage.module';
 
@@ -39,6 +40,7 @@ import { UsageModule } from './usage/usage.module';
     EngineModule,
     UsageModule,
     SessionModule,
+    ReviewModule,
   ],
   controllers: [HealthController],
 })
