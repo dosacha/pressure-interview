@@ -46,10 +46,11 @@ export class ReviewService {
   async start(sessionId: string): Promise<void> {
     await this.finishedSession(sessionId);
     if (this.running.has(sessionId)) return;
-    this.errors.delete(sessionId);
-    const task = this.locked(sessionId, () =>
-      this.recorder.run(sessionId, () => this.work(sessionId)),
-    )
+    const task = this.locked(sessionId, () => {
+      // 줄을 선 뒤에 지운다. 먼저 지우면 앞서 잠금을 쥔 updateTurn이 남긴 오류가 끝난 복기에 그대로 붙는다.
+      this.errors.delete(sessionId);
+      return this.recorder.run(sessionId, () => this.work(sessionId));
+    })
       .catch((e: unknown) => {
         this.errors.set(sessionId, toUpstreamError(e).reason);
         this.log('복기 작업 실패', sessionId, e);
