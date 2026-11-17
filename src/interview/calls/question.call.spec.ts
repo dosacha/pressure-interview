@@ -42,6 +42,9 @@ describe('question.call', () => {
     expect(system).toContain('복기');
     expect(system).toContain('질문 문장에 넣은 기술 사실(가정 변경의 전제 등)은 정확해야 한다.');
   });
+  it('저장 매체 문장이 시스템 프롬프트에 없다', () => {
+    expect(buildQuestionPrompt(input).system).not.toContain('저장 매체를 바꾸는 가정은 내지 않');
+  });
   it('REQUIRED_RULES에 정답지 정확성 줄이 없다', () => {
     expect(REQUIRED_RULES).not.toContain('숨은 정답지는 정확해야 한다');
     expect(REQUIRED_RULES.split('\n')).toHaveLength(11);
