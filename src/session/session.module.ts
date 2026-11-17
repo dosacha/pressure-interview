@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { EngineModule } from '../interview/engine.module';
 import { InterviewSession } from './interview-session.entity';
 import { InterviewTurn } from './interview-turn.entity';
+import { InterviewController } from './interview.controller';
 import { InterviewService, MEMORY_SOURCE, RNG, type MemorySource } from './interview.service';
 
 // Task 11이 실제 기억으로 바꾼다.
@@ -13,6 +14,7 @@ const emptyMemory: MemorySource = {
 
 @Module({
   imports: [TypeOrmModule.forFeature([InterviewSession, InterviewTurn]), EngineModule],
+  controllers: [InterviewController],
   providers: [
     InterviewService,
     { provide: RNG, useValue: Math.random },
