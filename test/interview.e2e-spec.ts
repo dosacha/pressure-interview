@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { Logger } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DataSource } from 'typeorm';
 
@@ -481,5 +482,22 @@ describe('면접 서비스 (e2e)', () => {
       [a.id, 2, 'in_progress'],
     ]);
     expect(typeof list[0].createdAt).toBe('string');
+  });
+
+  it('백그라운드 사후 검증이 실패하면 원래 오류의 메시지와 스택을 로그에 남긴다', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      fake.once('verify', new Error('사후검증-실패-4412'));
+      const v = await service.start({ topic: 'Redis' });
+      await service.settle();
+      const logged = warn.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('사후검증-실패-4412');
+      expect(logged).toContain(v.turns[0].id);
+      expect(warn.mock.calls.some((c) => String(c[1]).includes('Error: 사후검증-실패-4412'))).toBe(
+        true,
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

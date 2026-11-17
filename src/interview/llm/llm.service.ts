@@ -6,6 +6,10 @@ import type { TokenUsage } from '../types';
 import { ANTHROPIC_CLIENT } from './anthropic.provider';
 import { UsageRecorder, type UsageRow } from './usage-recorder';
 
+// toUpstreamError가 같은 문자열로 오류를 나눈다.
+export const MAX_TOKENS_MESSAGE = 'max_tokens';
+export const NO_TEXT_BLOCK_PREFIX = '응답에 text 블록이 없다';
+
 export class RefusalError extends Error {
   override readonly name = 'RefusalError';
   constructor(readonly category: string | null) {
@@ -87,9 +91,9 @@ export class LlmService implements JsonLlm {
     // 거절·max_tokens로 끝난 호출도 과금되므로 stop_reason을 보기 전에 센다.
     this.recorder.record(usageRows(req.role, res));
     if (res.stop_reason === 'refusal') throw new RefusalError(res.stop_details?.category ?? null);
-    if (res.stop_reason === 'max_tokens') throw new Error('max_tokens');
+    if (res.stop_reason === 'max_tokens') throw new Error(MAX_TOKENS_MESSAGE);
     const text = res.content.find((b) => b.type === 'text');
-    if (!text) throw new Error(`응답에 text 블록이 없다 (stop_reason: ${res.stop_reason})`);
+    if (!text) throw new Error(`${NO_TEXT_BLOCK_PREFIX} (stop_reason: ${res.stop_reason})`);
     const data: unknown = JSON.parse(text.text);
     return {
       data: data as T,

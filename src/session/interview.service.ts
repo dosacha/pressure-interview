@@ -338,7 +338,9 @@ export class InterviewService {
       .run(sessionId, () => this.engine.verifyLate({ topic, question }))
       .then(({ verification }) => this.applyLateVerification(turnId, verification))
       .catch((e: unknown) => {
-        this.logger.warn(`사후 검증 실패(턴 ${turnId}): ${toUpstreamError(e).reason}`);
+        const msg = `사후 검증 실패(턴 ${turnId}): ${e instanceof Error ? e.message : String(e)}`;
+        if (e instanceof Error) this.logger.warn(msg, e.stack);
+        else this.logger.warn(msg);
       })
       .finally(() => this.verifying.delete(turnId));
     this.verifying.set(turnId, task);

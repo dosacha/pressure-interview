@@ -1,4 +1,8 @@
-import { RefusalError } from '../interview/llm/llm.service';
+import {
+  MAX_TOKENS_MESSAGE,
+  NO_TEXT_BLOCK_PREFIX,
+  RefusalError,
+} from '../interview/llm/llm.service';
 
 /** 세션이나 턴이 없다. */
 export class NotFoundError extends Error {
@@ -37,9 +41,9 @@ export function toUpstreamError(e: unknown): UpstreamError {
   if (e instanceof UpstreamError) return e;
   if (e instanceof RefusalError) return new UpstreamError('REFUSAL', e.category);
   if (e instanceof SyntaxError) return new UpstreamError('BAD_RESPONSE', null);
-  if (e instanceof Error && e.message === 'max_tokens')
+  if (e instanceof Error && e.message === MAX_TOKENS_MESSAGE)
     return new UpstreamError('MAX_TOKENS', null);
-  if (e instanceof Error && e.message.startsWith('응답에 text 블록이 없다'))
+  if (e instanceof Error && e.message.startsWith(NO_TEXT_BLOCK_PREFIX))
     return new UpstreamError('BAD_RESPONSE', null);
   return new UpstreamError('API_ERROR', null);
 }
