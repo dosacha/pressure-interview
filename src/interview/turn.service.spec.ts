@@ -117,7 +117,7 @@ describe('TurnService.prepareQuestion', () => {
       leak: [{ techs: [{ name: 'Kafka', role: 'premise' }] }, { techs: [] }],
     });
     const r = await turn.prepareQuestion(base);
-    expect(r.attempts[0].naming).toEqual({ ok: false, violations: ['Kafka'] });
+    expect(r.attempts[0].naming).toEqual({ ok: false, violations: ['Kafka'], avoided: [] });
     expect(calls[2].user).toContain('Kafka');
     expect(r.question.text).toBe('다른 대안은요?');
   });
@@ -166,9 +166,71 @@ describe('TurnService.prepareQuestion', () => {
     expect(retry.indexOf('- 처음 지적')).toBeGreaterThan(-1);
     expect(retry.indexOf('- 처음 지적')).toBeLessThan(retry.indexOf('- 해답으로 꺼내면'));
   });
+  it('모른다고 한 기술이 전제로 나오면 버리고, 모름용 피드백으로 다시 만든다', async () => {
+    const { turn, calls } = await service({
+      question: [q('durability', 'Memcached라면요?'), q('durability', '재시작하면요?')],
+      leak: [{ techs: [{ name: 'Memcached', role: 'premise' }] }, { techs: [] }],
+      verify: [{ premiseOk: true, problems: [], answerKey: key() }],
+    });
+    const r = await turn.prepareQuestion({ ...base, avoidTechs: ['Memcached'] });
+    expect(r.attempts).toHaveLength(2);
+    const secondQuestionCall = calls.filter((c) => c.role === 'question')[1];
+    expect(secondQuestionCall.user).toContain(
+      '지원자가 모른다고 해서 질문에 다시 넣으면 안 되는 기술: Memcached',
+    );
+    expect(secondQuestionCall.user).not.toContain('해답으로 꺼내면 안 되는 기술');
+  });
+  it('모름 위반과 해답 위반이 함께 나오면 해답 문장 먼저, 이름은 한 문장에만 넣는다', async () => {
+    const { turn, calls } = await service({
+      question: [q('none', 'Q1'), q('none', 'Q2')],
+      leak: [
+        {
+          techs: [
+            { name: 'Memcached', role: 'solution' },
+            { name: 'Kafka', role: 'solution' },
+          ],
+        },
+        { techs: [] },
+      ],
+    });
+    await turn.prepareQuestion({ ...base, avoidTechs: ['Memcached'] });
+    const retry = calls.filter((c) => c.role === 'question')[1].user;
+    expect(retry).toContain('- 해답으로 꺼내면 안 되는 기술: Kafka\n');
+    expect(retry).toContain('- 지원자가 모른다고 해서 질문에 다시 넣으면 안 되는 기술: Memcached');
+    expect(retry.indexOf('해답으로 꺼내면')).toBeLessThan(retry.indexOf('모른다고 해서'));
+  });
+});
+
+describe('TurnService.verifyLate', () => {
+  it('verifyLate는 검증 결과와 사용량을 돌려준다', async () => {
+    const v = { premiseOk: true, problems: [], answerKey: key(['late']) };
+    const { turn, calls } = await service({ verify: [v] });
+    const r = await turn.verifyLate({ topic: 'Redis', question: q('none') });
+    expect(r).toEqual({ verification: v, usage: { input_tokens: 1, output_tokens: 1 } });
+    expect(calls.map((c) => c.role)).toEqual(['verify']);
+  });
 });
 
 describe('TurnService.handleAnswer', () => {
+  it('handleAnswer는 걸러 낸 unknownTechs를 돌려준다', async () => {
+    const ask = async (userMentioned: string[], kind = 'answer') => {
+      const { turn } = await service({
+        analyze: [{ kind, defects: [], mentionedTechs: [], unknownTechs: ['Memcached'] }],
+      });
+      return turn.handleAnswer({
+        topic: 'Redis',
+        panel,
+        history: ['p1'],
+        askedBy: 'p1',
+        question: q('durability'),
+        answer: 'Memcached는 모르겠습니다.',
+        userMentioned,
+      });
+    };
+    expect((await ask(['Redis'])).unknownTechs).toEqual(['Memcached']);
+    expect((await ask(['Redis', 'Memcached'])).unknownTechs).toEqual([]);
+    expect((await ask(['Redis'], 'clarify')).unknownTechs).toEqual(['Memcached']);
+  });
   it('되묻기면 질문자를 바꾸지 않고 언급 기술은 합친다', async () => {
     const { turn } = await service({
       analyze: [{ kind: 'clarify', defects: [], mentionedTechs: ['Redis', 'Lua'] }],

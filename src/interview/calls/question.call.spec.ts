@@ -74,4 +74,75 @@ describe('question.call', () => {
     expect(user).toContain('첫 질문');
     expect(user).not.toContain(basic);
   });
+  it('기억의 세 목록을 축 이름과 함께 싣고, 빈 목록의 줄은 넣지 않는다', () => {
+    const { user } = buildQuestionPrompt({
+      ...input,
+      memory: {
+        retired: [{ axis: 'durability', statement: '쓰기가 재시작 뒤에도 남아야 한다' }],
+        reissue: [],
+        expected: [],
+      },
+    });
+    expect(user).toContain('다시 내지 않는 가정');
+    expect(user).toContain('durability 영속성·전달 보장: 쓰기가 재시작 뒤에도 남아야 한다');
+    expect(user).not.toContain('다시 낼 수 있는 가정');
+  });
+  it('다시 낼 가정과 예상했던 가정에는 쓰는 법이 붙는다', () => {
+    const { user } = buildQuestionPrompt({
+      ...input,
+      memory: {
+        retired: [],
+        reissue: [{ axis: 'durability', statement: 'r' }],
+        expected: [{ axis: 'durability', statement: 'e' }],
+      },
+    });
+    expect(user).toContain(
+      '- 다시 낼 수 있는 가정(흔들렸거나 틀렸다): durability 영속성·전달 보장: r',
+    );
+    expect(user).toContain('이어지지 않으면 쓰지 않는다.');
+    expect(user).toContain('- 지원자가 예상했던 가정: durability 영속성·전달 보장: e');
+    expect(user).toContain('새 가정을 고를 때 피한다.');
+    expect(user).not.toContain('다시 내지 않는 가정');
+  });
+  it('기억이 없거나 모두 비면 기억 절이 없다', () => {
+    expect(buildQuestionPrompt(input).user).not.toContain('기억(');
+    const empty = { retired: [], reissue: [], expected: [] };
+    expect(buildQuestionPrompt({ ...input, memory: empty }).user).not.toContain('기억(');
+  });
+  it('모른다고 한 기술 줄과 덧붙이는 질문 줄을 넣는다', () => {
+    const { user } = buildQuestionPrompt({
+      ...input,
+      avoidTechs: ['Memcached', 'Lua'],
+      addOn: true,
+      memory: { retired: [{ axis: 'durability', statement: 's' }], reissue: [], expected: [] },
+    });
+    const avoid =
+      '지원자가 모른다고 한 기술(질문에 다시 넣지 않는다. 전제로도 쓰지 않는다): Memcached, Lua';
+    const addOn = '- 덧붙이는 질문이다. "저도 하나 덧붙이면"처럼 시작한다.';
+    expect(user).toContain(avoid);
+    expect(user).toContain(addOn);
+    const order = [
+      '지원자가 지금까지 말한 기술',
+      avoid,
+      '기억(이전 면접들에서 만난 가정):',
+      '이번 질문:',
+      '- 직전 답변의 결함',
+      addOn,
+    ].map((s) => user.indexOf(s));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    const plain = buildQuestionPrompt(input).user;
+    expect(plain).not.toContain('모른다고 한 기술');
+    expect(plain).not.toContain('덧붙이는 질문');
+  });
+  it('지원자가 말한 기술이 비어도 모른다고 한 기술 줄과 기억 절은 들어간다', () => {
+    const { user } = buildQuestionPrompt({
+      ...input,
+      userMentioned: [],
+      avoidTechs: ['Memcached'],
+      memory: { retired: [{ axis: 'durability', statement: 's' }], reissue: [], expected: [] },
+    });
+    expect(user).not.toContain('지원자가 지금까지 말한 기술');
+    expect(user).toContain('지원자가 모른다고 한 기술');
+    expect(user).toContain('기억(이전 면접들에서 만난 가정):');
+  });
 });

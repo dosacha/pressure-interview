@@ -56,6 +56,8 @@ export interface TechMention {
 export interface NamingResult {
   ok: boolean;
   violations: string[];
+  // violations 가운데 지원자가 모른다고 한 기술
+  avoided: string[];
 }
 export interface TokenUsage {
   input_tokens: number;
@@ -70,6 +72,9 @@ export interface QuestionInput {
   history: { interviewerId: string; text: string; answer: string }[];
   userMentioned: string[];
   feedback: string[];
+  avoidTechs?: string[];
+  addOn?: boolean;
+  memory?: QuestionMemory;
 }
 export interface PreparedQuestion {
   question: Question;
@@ -99,6 +104,8 @@ export interface AnswerResult {
   pick: Pick | null;
   userMentioned: string[];
   usage: TokenUsage[];
+  // 분석의 unknownTechs에서 이미 말한 기술을 걸러 낸 목록
+  unknownTechs: string[];
 }
 
 export interface AssumptionRef {

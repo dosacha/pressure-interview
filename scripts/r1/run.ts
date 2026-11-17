@@ -154,6 +154,7 @@ export async function runScenarios(deps: R1Deps, scenarios: Scenario[]): Promise
               history: [{ interviewerId: askedBy, text: question.text, answer }],
               userMentioned: answered.userMentioned,
               feedback: [],
+              avoidTechs: answered.unknownTechs,
             },
             result.usage,
             (step) => (followUp.next = step),

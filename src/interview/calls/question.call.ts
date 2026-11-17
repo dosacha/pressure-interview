@@ -8,7 +8,7 @@ import {
   TEMPERAMENTS,
 } from '../catalog';
 import type { JsonLlm } from '../llm/llm.service';
-import type { Question, QuestionInput, TokenUsage } from '../types';
+import type { AssumptionRef, Question, QuestionInput, TokenUsage } from '../types';
 
 export const REQUIRED_RULES = [
   '- 질문은 한 번에 하나만 한다. 질문 의도는 말하지 않는다.',
@@ -222,6 +222,31 @@ ${Object.entries(ANSWER_KEY_SCHEMA.properties)
   if (input.userMentioned.length > 0) {
     lines.push(`지원자가 지금까지 말한 기술: ${input.userMentioned.join(', ')}`, '');
   }
+  if (input.avoidTechs && input.avoidTechs.length > 0) {
+    lines.push(
+      `지원자가 모른다고 한 기술(질문에 다시 넣지 않는다. 전제로도 쓰지 않는다): ${input.avoidTechs.join(', ')}`,
+      '',
+    );
+  }
+  const memory = input.memory;
+  if (memory && (memory.retired.length || memory.reissue.length || memory.expected.length)) {
+    const refs = (list: AssumptionRef[]) =>
+      list.map((a) => `${a.axis} ${axisName(a.axis)}: ${a.statement}`).join(' / ');
+    lines.push('기억(이전 면접들에서 만난 가정):');
+    if (memory.retired.length > 0)
+      lines.push(`- 다시 내지 않는 가정(이미 잘 답했다): ${refs(memory.retired)}`);
+    if (memory.reissue.length > 0)
+      lines.push(
+        `- 다시 낼 수 있는 가정(흔들렸거나 틀렸다): ${refs(memory.reissue)}`,
+        '  이번 주제와 자연스럽게 이어지는 것이 있으면 그 가운데 하나를 다른 기술 조합에 끼워 낸다. 이어지지 않으면 쓰지 않는다.',
+      );
+    if (memory.expected.length > 0)
+      lines.push(
+        `- 지원자가 예상했던 가정: ${refs(memory.expected)}`,
+        '  비슷한 가정은 뻔하므로 새 가정을 고를 때 피한다.',
+      );
+    lines.push('');
+  }
 
   const turn: string[] = [];
   if (input.history.length === 0 && input.reactionIntent === null) {
@@ -241,6 +266,11 @@ ${Object.entries(ANSWER_KEY_SCHEMA.properties)
     const note = input.defect.note ? `. ${input.defect.note}` : '';
     turn.push(
       `- 직전 답변의 결함: ${DEFECT_NAMES[input.defect.type]}(관련 축: ${axisName(input.defect.axis)})${note}`,
+    );
+  }
+  if (input.addOn) {
+    turn.push(
+      '- 덧붙이는 질문이다. "저도 하나 덧붙이면"처럼 시작한다. 아래 결함은 바로 앞 답변이 아니라 그 앞의 답변(대화 목록의 끝에서 두 번째)에서 나왔다.',
     );
   }
   if (input.targetAxis !== null) {

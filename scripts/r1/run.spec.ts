@@ -38,6 +38,7 @@ const answered = (p: EnginePick | null): AnswerResult => ({
   pick: p,
   userMentioned: ['Redis', 'List'],
   usage: [{ input_tokens: 2, output_tokens: 2 }],
+  unknownTechs: [],
 });
 const scenario = (id: string, kinds: AnswerKind[]): Scenario => ({
   id,
@@ -161,6 +162,15 @@ describe('runScenarios', () => {
     expect(next.targetAxis).toBeNull();
     expect(next.history).toEqual([{ interviewerId: 'p1', text: '첫 질문', answer: '생성된 답 1' }]);
     expect(next.userMentioned).toEqual(['Redis', 'List']);
+  });
+
+  it('후속 질문에 모른다고 한 기술을 avoidTechs로 넘긴다', async () => {
+    const f = fakes();
+    f.prepareQuestion.mockResolvedValue(prepared('identity_swap', '첫 질문'));
+    f.handleAnswer.mockResolvedValue({ ...answered(pick), unknownTechs: ['Memcached'] });
+    await runScenarios(f.deps, [scenario('a', ['unknown'])]);
+    expect(f.prepareQuestion.mock.calls[0][0].avoidTechs).toBeUndefined();
+    expect(f.prepareQuestion.mock.calls[1][0].avoidTechs).toEqual(['Memcached']);
   });
 
   it('가정이 없는 질문에서만 lateVerification을 채운다', async () => {

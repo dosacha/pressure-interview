@@ -25,10 +25,14 @@ const prepared: PreparedQuestion = {
   attempts: [],
 };
 prepared.attempts = [
-  { question: prepared.question, naming: { ok: false, violations: ['Kafka'] }, verification: null },
   {
     question: prepared.question,
-    naming: { ok: true, violations: [] },
+    naming: { ok: false, violations: ['Kafka'], avoided: [] },
+    verification: null,
+  },
+  {
+    question: prepared.question,
+    naming: { ok: true, violations: [], avoided: [] },
     verification: prepared.verification,
   },
 ];
@@ -102,7 +106,7 @@ describe('R1 report', () => {
       attempts: [
         {
           question: { ...prepared.question, text: '버려진 질문: Kafka로 바꾸면?' },
-          naming: { ok: false, violations: ['Kafka'] },
+          naming: { ok: false, violations: ['Kafka'], avoided: [] },
           verification: null,
         },
         prepared.attempts[1],
@@ -144,12 +148,12 @@ describe('R1 report', () => {
       attempts: [
         {
           question: { ...prepared.question, text: '첫 줄\n둘째 줄' },
-          naming: { ok: false, violations: ['Kafka'] },
+          naming: { ok: false, violations: ['Kafka'], avoided: [] },
           verification: null,
         },
         {
           question: prepared.question,
-          naming: { ok: false, violations: ['RabbitMQ'] },
+          naming: { ok: false, violations: ['RabbitMQ'], avoided: [] },
           verification: null,
         },
       ],
@@ -192,7 +196,7 @@ describe('R1 report', () => {
       attempts: [
         {
           question: noAssumption,
-          naming: { ok: false, violations: ['PostgreSQL'] },
+          naming: { ok: false, violations: ['PostgreSQL'], avoided: [] },
           verification: null,
           techs: [
             { name: 'PostgreSQL', role: 'premise' },
@@ -201,7 +205,7 @@ describe('R1 report', () => {
         },
         {
           question: noAssumption,
-          naming: { ok: true, violations: [] },
+          naming: { ok: true, violations: [], avoided: [] },
           verification: null,
           techs: [],
         },
@@ -242,7 +246,7 @@ describe('R1 report', () => {
       attempts: [
         {
           question: { ...prepared.question, text: '버려진 질문 문장' },
-          naming: { ok: true, violations: [] },
+          naming: { ok: true, violations: [], avoided: [] },
           verification: {
             premiseOk: false,
             problems: [{ field: 'text', problem: '이유 첫 줄\n이유 둘째 줄' }],
