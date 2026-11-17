@@ -33,6 +33,17 @@ describe('question.call', () => {
     expect(buildQuestionPrompt(input).system).toContain(REQUIRED_RULES);
     expect(REQUIRED_RULES).toContain('O: "사용하신 기술 말고 다른 대안은 없었을까요?"');
   });
+  it('한 질문에서 묻는 것은 하나, 많아야 둘이라고 말한다', () => {
+    const { system } = buildQuestionPrompt(input);
+    expect(system).toContain(
+      '한 질문에서 묻는 것은 하나다. 꼭 이어서 물어야 할 때만 둘까지 묻고, 셋 이상은 묻지 않는다.',
+    );
+    expect(system).toContain('더 묻고 싶은 것은 다음 질문으로 남긴다.');
+    expect(system).not.toContain('질문은 한 번에 하나만 한다');
+  });
+  it('질문 의도를 말하지 않는다는 줄은 그대로 있다', () => {
+    expect(REQUIRED_RULES).toContain('- 질문 의도는 말하지 않는다.');
+  });
   it('user 프롬프트에 입력이 들어간다', () => {
     const { user } = buildQuestionPrompt(input);
     for (const s of [
