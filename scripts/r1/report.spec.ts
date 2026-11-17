@@ -275,4 +275,50 @@ describe('R1 report', () => {
     expect(failed).toContain('- 사후 검증 중 실패(시나리오 오류 참고)');
     expect(failed).toContain('시나리오가 여기서 멈췄다: 답 3개 중 0개까지 기록.');
   });
+  it('지원자 답 아래, 분석 위에 intendedFlaw 줄이 나오고 없으면 나오지 않는다', () => {
+    const md = renderReport({
+      startedAt: '2026-11-16T00:00:00Z',
+      results: [
+        {
+          ...results[0],
+          followUps: [{ ...results[0].followUps[0], intendedFlaw: '실행 구조를 틀리게 말함' }],
+        },
+      ],
+    });
+    expect(md).toMatch(
+      /> \.\.\.\n\n- 지원자 역할이 일부러 넣은 결함: 실행 구조를 틀리게 말함\n\n\*\*분석\*\*/,
+    );
+    const without = renderReport({ startedAt: '2026-11-16T00:00:00Z', results });
+    expect(without).not.toContain('일부러 넣은 결함');
+  });
+  it('숨은 정답지의 목록을 항목마다 한 줄씩 보여 주고, 비면 없음, 줄바꿈이 있어도 끊기지 않는다', () => {
+    const many: PreparedQuestion = {
+      ...prepared,
+      answerKeyCorrected: false,
+      question: {
+        ...prepared.question,
+        answerKey: {
+          vanishing: ['디스크 I/O', '쓰기 지연'],
+          remaining: ['데이터 모델'],
+          alternatives: [
+            { name: 'Memcached', traits: '단순 KV' },
+            { name: '대안B', traits: '특징B' },
+          ],
+          keyPoints: ['핵심 첫 줄\n핵심 둘째 줄'],
+        },
+      },
+    };
+    const md = renderReport({
+      startedAt: '2026-11-16T00:00:00Z',
+      results: [{ ...results[0], first: { prepared: many, lateVerification: null } }],
+    });
+    expect(md).toContain('- 사라지는 차이:\n  - 디스크 I/O\n  - 쓰기 지연\n');
+    expect(md).toContain('- 남는 차이:\n  - 데이터 모델\n');
+    expect(md).toContain('- 대안 기술:\n  - Memcached — 단순 KV\n  - 대안B — 특징B\n');
+    expect(md).toContain('- 기대하는 답의 핵심:\n  - 핵심 첫 줄\n    핵심 둘째 줄\n');
+    expect(md).not.toMatch(/^핵심 둘째 줄/m);
+    // 계획 fixture의 keyPoints는 비어 있다.
+    const empty = renderReport({ startedAt: '2026-11-16T00:00:00Z', results });
+    expect(empty).toContain('- 기대하는 답의 핵심: (없음)');
+  });
 });

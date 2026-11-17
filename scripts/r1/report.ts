@@ -28,6 +28,7 @@ export interface R1Step {
 export interface R1FollowUp {
   answerKind: string;
   answer: string;
+  intendedFlaw?: string;
   analysis: Analysis;
   pick: Pick | null;
   next: R1Step | null;
@@ -66,6 +67,11 @@ const quote = (text: string) => `> ${text.split('\n').join('\n> ')}`;
 const nestedQuote = (text: string) => `  ${quote(text).split('\n').join('\n  ')}`;
 const inline = (label: string, text: string) =>
   text.includes('\n') ? `${label}\n${nestedQuote(text)}` : `${label} ${text}`;
+// 항목마다 한 줄인 하위 목록. 항목 안의 줄바꿈은 들여써서 그 항목에 붙여 둔다.
+const bullets = (label: string, items: string[]) =>
+  items.length > 0
+    ? [`${label}:`, ...items.map((t) => `  - ${t.split('\n').join('\n    ')}`)]
+    : [`${label}: (없음)`];
 
 function memberName(panel: PanelMember[], id: string): string {
   const m = panel.find((p) => p.id === id);
@@ -136,10 +142,13 @@ function renderStep(
     '',
     `**숨은 정답지**${answerKeyCorrected || lateCorrected ? ' (정답지 수정됨, 고친 것을 보여 준다)' : ''}`,
     '',
-    `- 사라지는 차이: ${list(key.vanishing)}`,
-    `- 남는 차이: ${list(key.remaining)}`,
-    `- 대안 기술: ${list(key.alternatives.map((a) => `${a.name} — ${a.traits}`))}`,
-    `- 기대하는 답의 핵심: ${list(key.keyPoints)}`,
+    ...bullets('- 사라지는 차이', key.vanishing),
+    ...bullets('- 남는 차이', key.remaining),
+    ...bullets(
+      '- 대안 기술',
+      key.alternatives.map((a) => `${a.name} — ${a.traits}`),
+    ),
+    ...bullets('- 기대하는 답의 핵심', key.keyPoints),
     '',
   ];
 
@@ -212,6 +221,10 @@ function renderFollowUp(
     '',
     quote(f.answer),
     '',
+    // 바로 아래 분석과 대조하라고 둔다. 엔진에는 넘기지 않은 값이다.
+    ...(f.intendedFlaw !== undefined
+      ? [inline('- 지원자 역할이 일부러 넣은 결함:', f.intendedFlaw), '']
+      : []),
     '**분석**',
     '',
     `- 판정: ${analysis.kind === 'clarify' ? '되묻기' : '답'}`,
