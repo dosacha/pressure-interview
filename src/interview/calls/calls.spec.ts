@@ -86,6 +86,25 @@ describe('analyze / verify / leak 호출', () => {
     );
     expect(user).toContain('Memcached, Lua');
   });
+  it('분석 스키마는 unknownTechs를 요구한다', () => {
+    expect(ANALYZE_SCHEMA.required).toContain('unknownTechs');
+    expect(ANALYZE_SCHEMA.properties.unknownTechs.type).toBe('array');
+  });
+  it('분석의 user 프롬프트에 userMentioned를 주면 싣고, 주지 않으면 그 줄이 없다', async () => {
+    const withMentioned = await promptOf((llm) =>
+      analyzeAnswer(llm, {
+        topic: 'Redis',
+        question,
+        answer: '...',
+        userMentioned: ['Redis', 'Lua'],
+      }),
+    );
+    expect(withMentioned.user).toContain('지원자가 이전까지 말한 기술: Redis, Lua');
+    const without = await promptOf((llm) =>
+      analyzeAnswer(llm, { topic: 'Redis', question, answer: '...' }),
+    );
+    expect(without.user).not.toContain('지원자가 이전까지 말한 기술');
+  });
   it('검증 프롬프트의 user에 질문 문장과 정답지 항목이 있다', async () => {
     const { user } = await promptOf((llm) => verifyAnswerKey(llm, { topic: 'Redis', question }));
     for (const s of [question.text, '디스크 I/O', 'MVCC']) expect(user).toContain(s);

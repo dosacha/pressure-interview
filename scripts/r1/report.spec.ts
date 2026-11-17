@@ -1,5 +1,5 @@
 import { readEngineConfig } from '../../src/config/engine.config';
-import { PreparedQuestion, Question } from '../../src/interview/types';
+import { Analysis, PreparedQuestion, Question } from '../../src/interview/types';
 import { R1Result, renderReport, sumUsage } from './report';
 
 const prepared: PreparedQuestion = {
@@ -116,6 +116,23 @@ describe('R1 report', () => {
     });
     expect(md).toContain('claude-test-verify');
     expect(md).toContain('버려진 질문: Kafka로 바꾸면?');
+    expect(md).toContain('지원자 답 생성 호출은 analyze의 모델과 effort를 쓴다.');
+  });
+  it('모른다고 한 기술이 있는 후속에만 그 줄이 나온다', () => {
+    const analysis: Analysis = {
+      kind: 'answer',
+      defects: [],
+      mentionedTechs: [],
+      unknownTechs: ['Memcached', 'Hazelcast'],
+    };
+    const unknown = { ...results[0].followUps[0], analysis };
+    const md = renderReport({
+      startedAt: '2026-11-16T00:00:00Z',
+      results: [{ ...results[0], followUps: [unknown] }],
+    });
+    expect(md).toContain('- 지원자가 모른다고 한 기술: Memcached, Hazelcast');
+    const without = renderReport({ startedAt: '2026-11-16T00:00:00Z', results });
+    expect(without).not.toContain('모른다고 한 기술');
   });
   it('질문자, 남은 위반, 사후 검증의 전제 오류, 후속 실패를 보여 주고 줄바꿈에 목록이 끊기지 않는다', () => {
     const leaked: PreparedQuestion = {

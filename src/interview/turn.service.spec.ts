@@ -236,6 +236,64 @@ describe('TurnService.handleAnswer', () => {
     });
     expect(r.analysis).toEqual({ kind: 'answer', defects: [], mentionedTechs: ['Lua'] });
   });
+  it('모른다고 한 기술이 있으면 질문한 면접관이 B11로 넘어가고, 그 기술은 userMentioned에 없다', async () => {
+    // 규칙대로라면 durability 결함은 p1(DBA)이 맡는다. 질문자는 p2다.
+    const { turn } = await service({
+      analyze: [
+        {
+          kind: 'answer',
+          defects: [{ type: 'wrong', axis: 'durability', note: 'n' }],
+          mentionedTechs: ['Memcached', 'Lua'],
+          unknownTechs: ['Memcached'],
+        },
+      ],
+    });
+    const r = await turn.handleAnswer({
+      topic: 'Redis',
+      panel,
+      history: ['p2'],
+      askedBy: 'p2',
+      question: q('durability'),
+      answer: 'Memcached가 무엇인지 모르겠습니다.',
+      userMentioned: ['Redis'],
+    });
+    expect(r.pick?.interviewerId).toBe('p2');
+    expect(r.pick?.reactionIntent).toBe('B11');
+    expect(r.pick?.secondary).toBeNull();
+    expect(r.pick?.defect.type).toBe('none');
+    expect(r.pick?.defect.note).toContain('Memcached');
+    expect(r.userMentioned).toEqual(['Redis', 'Lua']);
+  });
+  it('되묻기면 모른다고 한 기술이 있어도 pick이 null이다', async () => {
+    const { turn } = await service({
+      analyze: [{ kind: 'clarify', defects: [], mentionedTechs: [], unknownTechs: ['Memcached'] }],
+    });
+    const r = await turn.handleAnswer({
+      topic: 'Redis',
+      panel,
+      history: ['p1'],
+      askedBy: 'p1',
+      question: q('identity_swap'),
+      answer: 'Memcached를 말씀하시는 건가요?',
+      userMentioned: ['Redis'],
+    });
+    expect(r.pick).toBeNull();
+  });
+  it('분석 호출에 입력의 userMentioned를 넘긴다', async () => {
+    const { turn, calls } = await service({
+      analyze: [{ kind: 'answer', defects: [], mentionedTechs: [] }],
+    });
+    await turn.handleAnswer({
+      topic: 'Redis',
+      panel,
+      history: ['p1'],
+      askedBy: 'p1',
+      question: q('identity_swap'),
+      answer: '...',
+      userMentioned: ['Redis', 'Lua'],
+    });
+    expect(calls[0].user).toContain('Redis, Lua');
+  });
   it('askedBy가 패널에 없으면 던진다', async () => {
     const { turn, calls } = await service({ analyze: [] });
     await expect(

@@ -95,7 +95,7 @@ export type DefectType = (typeof DEFECT_TYPES)[number];
 
 // 설계 6.2의 3단계 결함 유형 이름
 export const DEFECT_NAMES: Record<DefectType, string> = {
-  none: '결함 없음(강한 답)',
+  none: '결함 없음',
   wrong: '오답 의심',
   missing_axis: '축 누락',
   no_why: 'why 없음',

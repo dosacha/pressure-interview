@@ -42,6 +42,7 @@ export interface Analysis {
   kind: 'answer' | 'clarify';
   defects: Defect[];
   mentionedTechs: string[];
+  unknownTechs?: string[];
 }
 export interface Verification {
   premiseOk: boolean;

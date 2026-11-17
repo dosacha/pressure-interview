@@ -290,7 +290,7 @@ describe('scenarios.json', () => {
     'redis-identity': {
       panel: ['dba/shaker', 'textbook/persistent', 'scenario/helper'],
       first: 'dba/identity_swap',
-      answers: ['good', 'vague', 'wrong'],
+      answers: ['good', 'vague', 'wrong', 'unknown'],
     },
     'redis-queue': {
       panel: ['architect/persistent', 'dba/helper', 'scenario/shaker'],

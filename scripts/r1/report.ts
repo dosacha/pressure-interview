@@ -233,6 +233,9 @@ function renderFollowUp(
           d.note ? inline(`- 결함: ${defectName(d)} —`, d.note) : `- 결함: ${defectName(d)}`,
         )
       : ['- 결함: 분석이 돌려준 결함 없음']),
+    ...(analysis.unknownTechs && analysis.unknownTechs.length > 0
+      ? [`- 지원자가 모른다고 한 기술: ${analysis.unknownTechs.join(', ')}`]
+      : []),
     `- 지원자가 말한 것으로 잡힌 기술: ${list(analysis.mentionedTechs)}`,
     '',
     '**다음 질문자**',
@@ -278,7 +281,7 @@ export function renderReport(run: {
     for (const role of CALL_ROLES) {
       lines.push(`| ${role} | ${engine.models[role]} | ${engine.effort[role]} |`);
     }
-    lines.push('');
+    lines.push('', '지원자 답 생성 호출은 analyze의 모델과 effort를 쓴다.', '');
   }
 
   lines.push('## 사용량', '', '| 시나리오 | input_tokens | output_tokens |', '|---|---|---|');
@@ -289,7 +292,7 @@ export function renderReport(run: {
   lines.push(
     `| 전체 | ${total.input_tokens} | ${total.output_tokens} |`,
     '',
-    '사용량은 응답을 만든 시도만 센 것이다. 폴백으로 거절된 시도의 토큰은 빠져 있다. 오류로 끝난 턴의 사용량도 빠져 있다. 그 턴에서 이미 끝난 호출과 실패한 호출의 토큰이 모두 합계에 들지 않는다.',
+    '사용량은 응답을 만든 시도만 센 것이다. 폴백으로 거절된 시도의 토큰은 빠져 있다. 엔진의 턴(질문 준비나 답 분석)이 오류로 끝나면 그 턴의 사용량도 빠져 있다. 그 턴에서 이미 끝난 호출과 실패한 호출의 토큰이 모두 합계에 들지 않는다. 그 전에 끝난 지원자 답 생성의 토큰은 합계에 들어 있다.',
     '',
   );
 

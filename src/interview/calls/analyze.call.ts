@@ -14,7 +14,7 @@ import { ANSWER_KEY_SCHEMA } from './question.call';
 export const ANALYZE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['kind', 'defects', 'mentionedTechs'],
+  required: ['kind', 'defects', 'mentionedTechs', 'unknownTechs'],
   properties: {
     kind: {
       type: 'string',
@@ -43,6 +43,11 @@ export const ANALYZE_SCHEMA = {
       items: { type: 'string' },
       description: '이번 입력에서 지원자가 말한 기술 이름 전부',
     },
+    unknownTechs: {
+      type: 'array',
+      items: { type: 'string' },
+      description: '질문이 꺼낸 기술 가운데 이번 입력에서 지원자가 모른다고 밝힌 기술',
+    },
   },
 };
 
@@ -51,15 +56,22 @@ const DEFECT_DEFS: Record<DefectType, string> = {
   wrong:
     '답변의 기술 사실이나 추론이 정답지와 어긋난다. 정답지가 다루지 않은 내용이라도 명백히 틀렸으면 여기에 든다.',
   missing_axis:
-    '정답지가 기대하는 관점이나 핵심 차이를 다루지 않았다. 일부만 말하고 나머지를 놓친 경우도 여기에 든다. axis에는 빠진 쪽의 축을 적는다.',
+    '정답지가 기대하는 핵심 관점이 답에서 빠졌다. 핵심 관점은 그대로 다루면서 정답지의 세부 항목 몇 개를 말하지 않은 것은 여기에 들지 않는다. axis에는 빠진 관점의 축을 적는다.',
   no_why: '무엇인지나 무엇을 했는지는 말했지만, 왜 그런지 원인이나 이유를 말하지 않았다.',
   no_tradeoff: '선택이나 방법의 장점만 말하고 단점이나 대가를 말하지 않았다.',
   vague: '표현이 추상적이어서 무엇을 어떻게 했는지 구체적으로 알 수 없다.',
   no_evidence: '개선이나 효과를 주장하면서 수치, 기준선, 측정 방법을 대지 않았다.',
-  none: '정답지의 핵심을 맞게 짚었고 위의 결함이 없다.',
+  none: '강한 답이다. 정답지의 keyPoints를 대부분 맞게 짚었고 틀린 말이 없다.',
 };
 
-function buildAnalyzePrompt(input: { topic: string; question: Question; answer: string }): {
+interface AnalyzeInput {
+  topic: string;
+  question: Question;
+  answer: string;
+  userMentioned?: string[];
+}
+
+function buildAnalyzePrompt(input: AnalyzeInput): {
   system: string;
   user: string;
 } {
@@ -88,7 +100,13 @@ ${Object.entries(ANSWER_KEY_SCHEMA.properties)
 
 ${defects}
 
-결함이 여럿이면 모두 적되 무거운 것부터 적는다. 강한 답이면 none 하나만 적는다. none은 결함이 없다는 판정이라 다른 결함과 함께 적지 않는다.
+## 결함을 몇 개 적는가
+
+적는 결함의 수는 답이 정답지에 얼마나 가까운지에 따라 다르다. 먼저 답이 아래 세 경우 가운데 어디에 드는지 정하고, 그 경우의 방식대로 적는다.
+
+1. 강한 답: keyPoints를 대부분 맞게 짚었고 틀린 말이 없다. none 하나만 적는다. 정답지의 세부 항목 몇 개를 말하지 않은 것은 결함으로 치지 않는다. 정답지는 면접관이 기대할 수 있는 것을 넓게 적은 목록이라, 실제 면접에서 그 전부를 말하는 지원자는 없기 때문이다. none은 결함이 없다는 판정이라 다른 결함과 함께 적지 않는다.
+2. 정답에 가까운 답: keyPoints 대부분을 맞게 짚었지만, 핵심 관점 하나가 빠졌거나 한 군데가 틀렸다. 틀린 곳이 있어도 답의 결론이 그 말에 기대지 않는 경우다. 가장 중요한 결함 하나만 적는다. 결함을 여러 개 적으면 면접관 두 명이 한꺼번에 따지게 되는데, 그것은 답이 많이 부족할 때만 맞는 반응이기 때문이다.
+3. 그 밖의 답: keyPoints의 상당 부분이 빠졌거나, 표현이 모호해 무엇을 말하는지 알 수 없거나, 답의 결론이 기대는 사실이 틀렸다. 찾은 결함을 모두 적되 무거운 것부터 적는다. 부족한 곳이 여럿인 답에는 여러 면접관이 함께 반응하는 것이 실제 면접과 같기 때문이다.
 
 ## 축
 
@@ -98,11 +116,21 @@ ${OWNABLE_AXES.map((id) => `- ${id} ${axisName(id)}`).join('\n')}
 
 ## note
 
-note에는 다음 질문을 쓰는 면접관에게 넘길 한 문장을 쓴다. 답변의 어느 부분이 왜 그 판정인지를 정답지에 비추어 적는다. 면접관은 이 문장을 보고 반응할 지점을 고른다. 정답지의 대안 기술처럼 지원자가 말하지 않은 기술 이름은 note에 쓰지 않고, "대안을 하나도 말하지 않았다"처럼 쓴다. note는 다음 질문 프롬프트에 그대로 들어가므로, 그 이름이 질문으로 흘러가 지원자가 스스로 대안을 떠올리는 연습을 없애기 때문이다.
+note에는 다음 질문을 쓰는 면접관에게 넘길 한 문장을 쓴다. 답변의 어느 부분이 왜 그 판정인지를 정답지에 비추어 적는다. 면접관은 이 문장을 보고 반응할 지점을 고른다. none이면 답이 말하지 않은 세부 가운데 가장 더 물어볼 만한 지점을 적는다. 강한 답 뒤에는 면접관이 난이도를 올리거나 확신을 시험하는데, 이 문장이 그 질문의 재료가 되기 때문이다. 정답지의 대안 기술처럼 지원자가 말하지 않은 기술 이름은 note에 쓰지 않고, "대안을 하나도 말하지 않았다"처럼 쓴다. note는 다음 질문 프롬프트에 그대로 들어가므로, 그 이름이 질문으로 흘러가 지원자가 스스로 대안을 떠올리는 연습을 없애기 때문이다.
 
 ## 지원자가 말한 기술
 
-mentionedTechs에는 이번 입력에서 지원자가 말한 기술 이름을 지원자가 쓴 표기대로 모두 적는다. 되묻기여도 채운다. 이 목록에 든 기술은 다음 질문에서 면접관이 먼저 꺼내도 되는 기술이 되므로, 질문 문장이나 정답지에만 나오고 지원자가 말하지 않은 기술은 넣지 않는다.`;
+mentionedTechs에는 이번 입력에서 지원자가 말한 기술 이름을 지원자가 쓴 표기대로 모두 적는다. 되묻기여도 채운다. 이 목록에 든 기술은 다음 질문에서 면접관이 먼저 꺼내도 되는 기술이 되므로, 질문 문장이나 정답지에만 나오고 지원자가 말하지 않은 기술은 넣지 않는다. 같은 이유로 아래 unknownTechs에 적은 기술은 지원자가 그 이름을 입에 올렸더라도 넣지 않는다.
+
+## 지원자가 모른다고 한 기술
+
+가정 변경 질문은 지원자가 말한 적 없는 기술을 비교 대상으로 꺼낼 수 있다. 지원자가 그 기술을 써 보지 않았다면 기술 자체를 모를 수 있고, 모른다고 하면 면접관은 알겠다고 받고 캐묻지 않고 넘어간다. 써 보지 않은 기술을 모르는 것은 지원자의 결함이 아니고, 그 기술을 캐물으면 주제와 상관없는 지식을 시험하게 되기 때문이다.
+
+그래서 unknownTechs에는 질문 문장에 나온 기술 가운데, 주제 기술이 아니고, 지원자가 이전에 말한 적 없으며, 이번 입력에서 지원자가 모른다고 밝힌 기술을 적는다. 지원자가 이전에 말한 기술은 user 메시지에 있으면 그것을 본다. 지원자가 이름을 대지 않고 "이 부분은 잘 모르겠습니다"라고만 해도, 그 모름이 질문이 꺼낸 그런 기술에 관한 것이면 그 기술을 적는다. 모르는 기술의 이름을 다시 말하지 않는 지원자도 많기 때문이다.
+
+지원자가 이미 말한 기술이나 주제 기술에 대해 모른다고 한 것은 unknownTechs에 넣지 않고, 다른 입력처럼 답으로 분석해 결함을 적는다. 그 기술은 지원자가 스스로 꺼냈거나 면접의 중심이어서, 어디까지 아는지가 확인할 대상이기 때문이다.
+
+unknownTechs가 비어 있지 않으면 defects는 빈 배열로 둔다. 면접관이 캐묻지 않고 넘어가므로 결함을 매길 대상이 아니기 때문이다. 해당하는 기술이 없으면 unknownTechs는 빈 배열이다.`;
 
   const { question } = input;
   const assumption =
@@ -111,6 +139,9 @@ mentionedTechs에는 이번 입력에서 지원자가 말한 기술 이름을 �
       : `${axisName(question.assumption.axis)} 축. ${question.assumption.statement}`;
   const user = [
     `주제: ${input.topic}`,
+    ...(input.userMentioned
+      ? [`지원자가 이전까지 말한 기술: ${input.userMentioned.join(', ')}`]
+      : []),
     '',
     `질문: ${question.text}`,
     `질문 의도: ${question.questionIntent} ${QUESTION_INTENTS[question.questionIntent]}`,
@@ -128,7 +159,7 @@ mentionedTechs에는 이번 입력에서 지원자가 말한 기술 이름을 �
 
 export async function analyzeAnswer(
   llm: JsonLlm,
-  input: { topic: string; question: Question; answer: string },
+  input: AnalyzeInput,
 ): Promise<{ data: Analysis; usage: TokenUsage }> {
   const { data, usage } = await llm.callJson<Analysis>({
     role: 'analyze',

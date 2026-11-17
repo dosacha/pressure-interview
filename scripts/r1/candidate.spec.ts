@@ -21,6 +21,7 @@ const marks: Record<AnswerKind, string> = {
   good: '왜 그런지',
   vague: '일반론',
   wrong: '확신',
+  unknown: '모른다고',
 };
 
 describe('writeCandidateAnswer', () => {
@@ -45,10 +46,10 @@ describe('writeCandidateAnswer', () => {
     expect(noRule.user).not.toContain('지켜야 할 규칙');
   });
 
-  it('세 종류의 프롬프트가 서로 다르고, 종류마다 그 종류의 지시가 들어 있다', async () => {
-    const kinds: AnswerKind[] = ['good', 'vague', 'wrong'];
+  it('네 종류의 프롬프트가 서로 다르고, 종류마다 그 종류의 지시가 들어 있다', async () => {
+    const kinds: AnswerKind[] = ['good', 'vague', 'wrong', 'unknown'];
     const reqs = await Promise.all(kinds.map((kind) => requestOf({ ...base, kind })));
-    expect(new Set(reqs.map((r) => r.system + r.user)).size).toBe(3);
+    expect(new Set(reqs.map((r) => r.system + r.user)).size).toBe(4);
     kinds.forEach((kind, i) => {
       expect(reqs[i].user).toContain(`답의 종류: ${kind}`);
       for (const other of kinds) {

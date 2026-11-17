@@ -8,7 +8,7 @@
       { "id": "p3", "role": "scenario", "temperament": "helper" }
     ],
     "first": { "interviewerId": "p1", "targetAxis": "identity_swap" },
-    "answers": [{ "kind": "good" }, { "kind": "vague" }, { "kind": "wrong" }]
+    "answers": [{ "kind": "good" }, { "kind": "vague" }, { "kind": "wrong" }, { "kind": "unknown" }]
   },
   {
     "id": "redis-queue",

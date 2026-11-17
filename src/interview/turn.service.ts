@@ -91,12 +91,32 @@ export class TurnService {
       topic: input.topic,
       question: input.question,
       answer: input.answer,
+      userMentioned: input.userMentioned,
     });
-    const userMentioned = [...new Set([...input.userMentioned, ...analysis.mentionedTechs])];
+    const unknownTechs = analysis.unknownTechs ?? [];
+    // 분석이 모른다고 한 기술을 mentionedTechs에도 넣었으면 뺀다. 면접관이 먼저 꺼내도 되는 기술이 되기 때문이다.
+    const mentioned = analysis.mentionedTechs.filter((t) => !unknownTechs.includes(t));
+    const userMentioned = [...new Set([...input.userMentioned, ...mentioned])];
     if (analysis.kind === 'clarify') return { analysis, pick: null, userMentioned, usage: [usage] };
 
     const questionAxis = input.question.assumption.axis;
     const axis = OWNABLE_AXES.find((a) => a === questionAxis) ?? ROLES[asker.role].axes[0];
+    if (unknownTechs.length > 0) {
+      // shortcut: 모른다고 한 기술은 다음 한 질문에만 note로 넘긴다, 여러 턴에 걸쳐 기억하는 것은 계획 2의 세션 상태에서
+      // shortcut: 같은 면접관이 이어 묻고 연속 상한은 보지 않는다, 계획 2에서 턴 진행 규칙과 함께 정리
+      const note = `지원자가 ${unknownTechs.join(', ')}에 대해 모른다고 했다. 알겠다고 받고 다음으로 넘어가며, 그 기술을 설명하지 않고 다음 질문에서 다시 쓰지 않는다. 써 보지 않은 기술을 모르는 것은 결함이 아니고, 설명하면 면접 중에 가르치게 되기 때문이다.`;
+      return {
+        analysis,
+        pick: {
+          interviewerId: asker.id,
+          reactionIntent: 'B11',
+          defect: { type: 'none', axis, note },
+          secondary: null,
+        },
+        userMentioned,
+        usage: [usage],
+      };
+    }
     const defects: Defect[] =
       analysis.defects.length > 0 ? analysis.defects : [{ type: 'none', axis, note: '' }];
     const pick = pickNext({
