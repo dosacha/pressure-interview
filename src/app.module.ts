@@ -7,6 +7,7 @@ import { validateEnvironment, type EnvironmentVariables } from './config/environ
 import { createDataSourceOptions } from './database/database.options';
 import { HealthController } from './health/health.controller';
 import { EngineModule } from './interview/engine.module';
+import { UsageModule } from './usage/usage.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { EngineModule } from './interview/engine.module';
       }),
     }),
     EngineModule,
+    UsageModule,
   ],
   controllers: [HealthController],
 })
