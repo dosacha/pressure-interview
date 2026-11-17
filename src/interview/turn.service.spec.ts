@@ -25,18 +25,19 @@ const KIND_BY_REQUIRED: [string, string][] = [
 ];
 type Req = { role: string; user: string; schema: { required?: string[] } };
 
-// 호출 종류별 응답 큐를 차례로 돌려주는 가짜 LlmService
+// 호출 종류별 응답 큐를 차례로 돌려주는 가짜 LlmService. 큐의 항목이 함수면 그 Promise가 풀릴 때 응답한다.
 function fakeLlm(queues: Record<string, unknown[]>) {
   const calls: (Req & { kind: string })[] = [];
-  const callJson = (req: Req) => {
+  const callJson = async (req: Req) => {
     const kind =
       KIND_BY_REQUIRED.find(([key]) => req.schema.required?.includes(key))?.[1] ?? req.role;
     calls.push({ ...req, kind });
-    return Promise.resolve({
-      data: queues[kind].shift(),
+    const next = queues[kind].shift();
+    return {
+      data: typeof next === 'function' ? await (next as () => Promise<unknown>)() : next,
       usage: { input_tokens: 1, output_tokens: 1 },
       model: 'm',
-    });
+    };
   };
   return { calls, llm: { callJson } };
 }
@@ -94,17 +95,27 @@ describe('TurnService.prepareDraft', () => {
     expect(calls[2].user).toContain('Kafka');
     expect(r.flags.leak).toBe(false);
   });
-  it('이름 위반이 끝까지 남으면 flags.leak이고, 걸린 시도는 전제를 검사하지 않는다', async () => {
+  it('이름 위반이 끝까지 남으면 flags.leak이고, 걸린 시도는 전제 검사의 결과를 쓰지 않는다', async () => {
     const leaked = { techs: [{ name: 'Kafka', role: 'solution' }] };
+    const bad = { premiseOk: false, problems: [{ field: 'text', problem: '전제가 틀렸다' }] };
     const { turn, calls } = await service({
       question: [d('identity_swap', 'Kafka는요?'), d('identity_swap', 'Kafka는요?')],
       leak: [leaked, leaked],
+      premise: [bad, bad],
     });
     const r = await turn.prepareDraft(base);
-    expect(r.flags.leak).toBe(true);
+    expect(r.flags).toEqual({ leak: true, premise: false });
     expect(r.premise).toBeNull();
-    expect(calls.map((c) => c.kind)).toEqual(['question', 'leak', 'question', 'leak']);
+    expect(calls.map((c) => c.kind)).toEqual([
+      'question',
+      'leak',
+      'premise',
+      'question',
+      'leak',
+      'premise',
+    ]);
     expect(r.attempts).toHaveLength(2);
+    expect(r.attempts.map((a) => a.premise)).toEqual([null, null]);
   });
   it('prepareDraft는 가정을 바꾼 질문에서만 전제를 검사한다', async () => {
     const none = await service({ question: [d('none')], leak: [{ techs: [] }] });
@@ -164,15 +175,55 @@ describe('TurnService.prepareDraft', () => {
     expect(r.flags.premise).toBe(true);
     expect(r.premise).toEqual(bad);
   });
-  it('prepareDraft는 이름 위반이면 전제를 검사하지 않고 다시 만든다', async () => {
+  it('prepareDraft는 이름 위반이면 함께 돈 전제 검사의 결과를 쓰지 않고 다시 만든다', async () => {
+    const bad = { premiseOk: false, problems: [{ field: 'text', problem: '전제가 틀렸다' }] };
     const { turn, calls } = await service({
       question: [d('identity_swap', 'Kafka라면요?'), d('identity_swap', '재시작하면요?')],
       leak: [{ techs: [{ name: 'Kafka', role: 'solution' }] }, { techs: [] }],
-      premise: [OK],
+      premise: [bad, OK],
     });
     const r = await turn.prepareDraft(base);
-    expect(calls.map((c) => c.kind)).toEqual(['question', 'leak', 'question', 'leak', 'premise']);
+    expect(calls.map((c) => c.kind)).toEqual([
+      'question',
+      'leak',
+      'premise',
+      'question',
+      'leak',
+      'premise',
+    ]);
     expect(r.attempts.map((a) => a.premise)).toEqual([null, OK]);
+    // 다시 만들 때의 피드백은 이름 위반 쪽만이다
+    const retry = calls.filter((c) => c.kind === 'question')[1].user;
+    expect(retry).toContain('Kafka');
+    expect(retry).not.toContain('전제가 틀렸다');
+    expect(r.usage).toHaveLength(6);
+    expect(r.flags).toEqual({ leak: false, premise: false });
+  });
+  it('가정을 바꾼 질문은 흘림 검사가 끝나기 전에 전제 검사를 시작한다', async () => {
+    let release: () => void = () => {};
+    const held = new Promise<{ techs: [] }>((resolve) => {
+      release = () => resolve({ techs: [] });
+    });
+    const { turn, calls } = await service({
+      question: [d('identity_swap')],
+      leak: [() => held],
+      premise: [OK],
+    });
+    const pending = turn.prepareDraft(base);
+    await new Promise((r) => setImmediate(r));
+    expect(calls.map((c) => c.kind)).toContain('premise');
+    release();
+    const r = await pending;
+    expect(r.premise).toEqual(OK);
+  });
+  it('흘림 검사가 실패하면 prepareDraft가 그 오류로 거절한다', async () => {
+    const failure = new Error('흘림 검사 실패');
+    const { turn } = await service({
+      question: [d('identity_swap')],
+      leak: [() => Promise.reject(failure)],
+      premise: [OK],
+    });
+    await expect(turn.prepareDraft(base)).rejects.toBe(failure);
   });
   it('prepareDraft는 정답지 호출과 검증 호출을 하지 않는다', async () => {
     const { turn, calls } = await service({
@@ -223,7 +274,7 @@ describe('TurnService.prepareDraft', () => {
     const { turn, calls } = await service({
       question: [d('identity_swap', '첫 시도'), d('identity_swap', '둘째 시도')],
       leak: [{ techs: [{ name: 'Kafka', role: 'solution' }] }, { techs: [] }],
-      premise: [OK],
+      premise: [OK, OK],
     });
     const r = await turn.prepareDraft(base);
     expect(r.usage).toHaveLength(calls.length);
@@ -243,7 +294,7 @@ describe('TurnService.prepareDraft', () => {
     const { turn, calls } = await service({
       question: [d('durability', 'Memcached라면요?'), d('durability', '재시작하면요?')],
       leak: [{ techs: [{ name: 'Memcached', role: 'premise' }] }, { techs: [] }],
-      premise: [OK],
+      premise: [OK, OK],
     });
     const r = await turn.prepareDraft({ ...base, avoidTechs: ['Memcached'] });
     expect(r.attempts).toHaveLength(2);

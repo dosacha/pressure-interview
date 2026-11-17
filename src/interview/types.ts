@@ -89,7 +89,7 @@ export interface QuestionInput {
 }
 export interface PreparedDraft {
   draft: QuestionDraft;
-  // 마지막 시도의 전제 검사. 가정 없는 질문이거나 이름 검사에서 걸렸으면 null
+  // 마지막 시도의 전제 검사. 가정 없는 질문이거나 이름 검사에서 걸렸으면 null(걸린 시도는 전제 검사가 함께 돌았어도 결과를 쓰지 않는다)
   premise: PremiseCheck | null;
   // premise는 보여 주기 전 전제 검사의 결과만 뜻한다
   flags: { leak: boolean; premise: boolean };

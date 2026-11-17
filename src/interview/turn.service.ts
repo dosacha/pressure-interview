@@ -64,11 +64,16 @@ export class TurnService {
       const generated = await generateQuestion(this.llm, { ...input, feedback });
       const draft = generated.data;
       usage.push(generated.usage);
-      const detected = await detectTechs(this.llm, {
-        questionText: draft.text,
-        userMentioned: input.userMentioned,
-      });
+      // 설계 6.2-6: 틀린 전제가 화면에 나가지 않게, 가정을 바꾼 질문은 보여 주기 전에 전제만 검사한다.
+      // 대기를 줄이려고 두 검사를 함께 시작한다. 이름 검사에서 걸리면 전제 검사 한 번이 헛돈다.
+      const [detected, premiseResult] = await Promise.all([
+        detectTechs(this.llm, { questionText: draft.text, userMentioned: input.userMentioned }),
+        draft.assumption.axis !== 'none'
+          ? checkPremise(this.llm, { topic: input.topic, draft })
+          : null,
+      ]);
       usage.push(detected.usage);
+      if (premiseResult) usage.push(premiseResult.usage);
       const techs = detected.data.techs;
       // 설계 6.3: premise는 가정 변경의 전제일 때만 허용한다. 가정 없는 질문의 premise는 해답으로 본다.
       const checked =
@@ -80,13 +85,7 @@ export class TurnService {
         userMentioned: input.userMentioned,
         avoid: input.avoidTechs,
       });
-      premise = null;
-      // 설계 6.2-6: 틀린 전제가 화면에 나가지 않게, 가정을 바꾼 질문은 보여 주기 전에 전제만 검사한다.
-      if (naming.ok && draft.assumption.axis !== 'none') {
-        const result = await checkPremise(this.llm, { topic: input.topic, draft });
-        usage.push(result.usage);
-        premise = result.data;
-      }
+      premise = naming.ok && premiseResult ? premiseResult.data : null;
       attempts.push({ draft, naming, premise, techs });
 
       leak = !naming.ok;
