@@ -262,7 +262,48 @@ describe('TurnService.handleAnswer', () => {
     expect(r.pick?.secondary).toBeNull();
     expect(r.pick?.defect.type).toBe('none');
     expect(r.pick?.defect.note).toContain('Memcached');
+    expect(r.pick?.defect.axis).toBe('durability');
     expect(r.userMentioned).toEqual(['Redis', 'Lua']);
+  });
+  it('모른다고 한 경로에서 질문 축이 공유 축이면 질문자 역할의 첫 축을 쓴다', async () => {
+    const { turn } = await service({
+      analyze: [{ kind: 'answer', defects: [], mentionedTechs: [], unknownTechs: ['Memcached'] }],
+    });
+    const r = await turn.handleAnswer({
+      topic: 'Redis',
+      panel,
+      history: ['p2'],
+      askedBy: 'p2',
+      question: q('identity_swap'),
+      answer: 'Memcached는 잘 모르겠습니다.',
+      userMentioned: ['Redis'],
+    });
+    expect(r.pick?.reactionIntent).toBe('B11');
+    expect(r.pick?.defect.axis).toBe('resource_limit');
+  });
+  it('분석이 이미 말한 기술을 모른다고 넣으면 넘어가지 않고 규칙이 다음 질문자를 고른다', async () => {
+    const { turn } = await service({
+      analyze: [
+        {
+          kind: 'answer',
+          defects: [{ type: 'wrong', axis: 'durability', note: 'n' }],
+          mentionedTechs: ['Redis'],
+          unknownTechs: ['Redis'],
+        },
+      ],
+    });
+    const r = await turn.handleAnswer({
+      topic: 'Redis',
+      panel,
+      history: ['p2'],
+      askedBy: 'p2',
+      question: q('durability'),
+      answer: 'Redis의 AOF는 잘 모르겠습니다.',
+      userMentioned: ['Redis'],
+    });
+    expect(r.pick?.interviewerId).toBe('p1');
+    expect(r.pick?.reactionIntent).toBe('B9');
+    expect(r.userMentioned).toEqual(['Redis']);
   });
   it('되묻기면 모른다고 한 기술이 있어도 pick이 null이다', async () => {
     const { turn } = await service({

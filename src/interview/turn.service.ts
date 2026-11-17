@@ -93,7 +93,10 @@ export class TurnService {
       answer: input.answer,
       userMentioned: input.userMentioned,
     });
-    const unknownTechs = analysis.unknownTechs ?? [];
+    // 이미 말한 기술(주제 기술 포함)에 대한 모름은 넘어가지 않는다. 분석이 프롬프트를 어겨 넣어도 여기서 거른다.
+    const unknownTechs = (analysis.unknownTechs ?? []).filter(
+      (t) => !input.userMentioned.includes(t),
+    );
     // 분석이 모른다고 한 기술을 mentionedTechs에도 넣었으면 뺀다. 면접관이 먼저 꺼내도 되는 기술이 되기 때문이다.
     const mentioned = analysis.mentionedTechs.filter((t) => !unknownTechs.includes(t));
     const userMentioned = [...new Set([...input.userMentioned, ...mentioned])];
