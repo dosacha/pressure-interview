@@ -3,6 +3,8 @@ import type { ConfigType } from '@nestjs/config';
 import { engineConfig } from '../config/engine.config';
 import { OWNABLE_AXES, ROLES } from './catalog';
 import { analyzeAnswer } from './calls/analyze.call';
+import { answerClarification } from './calls/clarify.call';
+import { pickJobRole } from './calls/job-role.call';
 import { detectTechs } from './calls/leak.call';
 import { generateQuestion } from './calls/question.call';
 import { verifyAnswerKey } from './calls/verify.call';
@@ -12,7 +14,11 @@ import { pickNext } from './rules';
 import type {
   AnswerInput,
   AnswerResult,
+  ClarifyInput,
+  ClarifyResult,
   Defect,
+  JobRoleId,
+  NamingResult,
   PreparedQuestion,
   Question,
   QuestionInput,
@@ -20,6 +26,18 @@ import type {
   TokenUsage,
   Verification,
 } from './types';
+
+// 이름 위반을 다음 시도에 줄 피드백 문장으로 바꾼다. 해답 위반 먼저, 이름은 한 문장에만 넣는다.
+function namingFeedback(naming: NamingResult): string[] {
+  const feedback: string[] = [];
+  const solutions = naming.violations.filter((n) => !naming.avoided.includes(n));
+  if (solutions.length > 0) feedback.push(`해답으로 꺼내면 안 되는 기술: ${solutions.join(', ')}`);
+  if (naming.avoided.length > 0)
+    feedback.push(
+      `지원자가 모른다고 해서 질문에 다시 넣으면 안 되는 기술: ${naming.avoided.join(', ')}`,
+    );
+  return feedback;
+}
 
 @Injectable()
 export class TurnService {
@@ -65,13 +83,7 @@ export class TurnService {
 
       leak = !naming.ok;
       if (leak) {
-        const solutions = naming.violations.filter((n) => !naming.avoided.includes(n));
-        if (solutions.length > 0)
-          feedback.push(`해답으로 꺼내면 안 되는 기술: ${solutions.join(', ')}`);
-        if (naming.avoided.length > 0)
-          feedback.push(
-            `지원자가 모른다고 해서 질문에 다시 넣으면 안 되는 기술: ${naming.avoided.join(', ')}`,
-          );
+        feedback.push(...namingFeedback(naming));
       } else if (verification && !verification.premiseOk) {
         feedback.push(...verification.problems.map((p) => p.problem));
       } else {
@@ -92,6 +104,37 @@ export class TurnService {
       attempts,
       usage,
     };
+  }
+
+  async replyToClarification(input: ClarifyInput): Promise<ClarifyResult> {
+    const usage: TokenUsage[] = [];
+    const feedback: string[] = [];
+    // 질문에 이미 나온 기술은 다시 말해도 흘림이 아니다.
+    const allowed = [...input.userMentioned, ...input.questionTechs.map((t) => t.name)];
+    let reply = '';
+    let leak = false;
+
+    for (let i = 0; i <= this.config.maxRegenerations; i++) {
+      const answered = await answerClarification(this.llm, { ...input, feedback });
+      usage.push(answered.usage);
+      reply = answered.data.reply;
+      const detected = await detectTechs(this.llm, { questionText: reply, userMentioned: allowed });
+      usage.push(detected.usage);
+      // 응답은 새 가정을 세우지 않으므로 premise도 해답으로 본다.
+      const techs = detected.data.techs.map(
+        (t): TechMention => (t.role === 'premise' ? { ...t, role: 'solution' } : t),
+      );
+      const naming = checkNaming({ techs, userMentioned: allowed, avoid: input.avoidTechs });
+      leak = !naming.ok;
+      if (!leak) break;
+      feedback.push(...namingFeedback(naming));
+    }
+    return { reply, leak, usage };
+  }
+
+  async pickJobRole(topic: string): Promise<{ role: JobRoleId; usage: TokenUsage }> {
+    const { data, usage } = await pickJobRole(this.llm, topic);
+    return { role: data.role, usage };
   }
 
   // 가정 없는 질문은 prepareQuestion이 검증하지 않으므로 그 정답지를 나중에 검증한다(설계 6.2의 6단계).

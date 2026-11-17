@@ -122,6 +122,24 @@ export interface PendingSecondary {
   choice: PickChoice;
   causeTurnId: string;
 }
+export type JobRoleId = 'dba' | 'security' | 'architect';
+export interface ClarifyInput {
+  topic: string;
+  interviewer: PanelMember;
+  question: Question;
+  // 그 질문에서 검출된 기술(prepared.attempts의 마지막 항목의 techs. 없으면 [])
+  questionTechs: TechMention[];
+  // 이 질문에서 앞서 주고받은 되묻기
+  exchanges: { ask: string; reply: string }[];
+  ask: string;
+  userMentioned: string[];
+  avoidTechs: string[];
+}
+export interface ClarifyResult {
+  reply: string;
+  leak: boolean;
+  usage: TokenUsage[];
+}
 export interface Clarification {
   ask: string;
   reply: string;

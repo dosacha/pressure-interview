@@ -2,15 +2,24 @@ import { Test } from '@nestjs/testing';
 import { engineConfig, readEngineConfig } from '../config/engine.config';
 import { LlmService } from './llm/llm.service';
 import { TurnService } from './turn.service';
-import { AnswerKey, PanelMember, Question, QuestionInput } from './types';
+import { AnswerKey, ClarifyInput, PanelMember, Question, QuestionInput } from './types';
 
-// 호출 역할별 응답 큐를 차례로 돌려주는 가짜 LlmService
+// 같은 역할을 쓰는 호출은 스키마 required로 가른다(되묻기 응답은 question, 직무 고르기는 analyze 역할).
+const KIND_BY_REQUIRED: [string, string][] = [
+  ['reply', 'clarify'],
+  ['role', 'jobRole'],
+];
+type Req = { role: string; user: string; schema: { required?: string[] } };
+
+// 호출 종류별 응답 큐를 차례로 돌려주는 가짜 LlmService
 function fakeLlm(queues: Record<string, unknown[]>) {
-  const calls: { role: string; user: string }[] = [];
-  const callJson = (req: { role: string; user: string }) => {
-    calls.push(req);
+  const calls: (Req & { kind: string })[] = [];
+  const callJson = (req: Req) => {
+    const kind =
+      KIND_BY_REQUIRED.find(([key]) => req.schema.required?.includes(key))?.[1] ?? req.role;
+    calls.push({ ...req, kind });
     return Promise.resolve({
-      data: queues[req.role].shift(),
+      data: queues[kind].shift(),
       usage: { input_tokens: 1, output_tokens: 1 },
       model: 'm',
     });
@@ -198,6 +207,63 @@ describe('TurnService.prepareQuestion', () => {
     expect(retry).toContain('- 해답으로 꺼내면 안 되는 기술: Kafka\n');
     expect(retry).toContain('- 지원자가 모른다고 해서 질문에 다시 넣으면 안 되는 기술: Memcached');
     expect(retry.indexOf('해답으로 꺼내면')).toBeLessThan(retry.indexOf('모른다고 해서'));
+  });
+});
+
+describe('TurnService.replyToClarification', () => {
+  const clarify: ClarifyInput = {
+    topic: 'Redis',
+    interviewer: { id: 'p1', role: 'dba', temperament: 'shaker' },
+    question: q('durability', 'Memcached라면 재시작 뒤에 무엇이 남을까요?'),
+    questionTechs: [{ name: 'Memcached', role: 'premise' }],
+    exchanges: [],
+    ask: '읽기 위주인가요?',
+    userMentioned: ['Redis'],
+    avoidTechs: [],
+  };
+  it('되묻기 응답이 질문에 나온 전제 기술을 다시 말해도 통과한다', async () => {
+    const { turn, calls } = await service({
+      clarify: [{ reply: 'Memcached는 한 대로 둡니다.' }],
+      leak: [{ techs: [{ name: 'Memcached', role: 'premise' }] }],
+    });
+    expect((await turn.replyToClarification(clarify)).leak).toBe(false);
+    expect(calls.map((c) => c.kind)).toEqual(['clarify', 'leak']);
+    expect(calls[1].user).toContain('Redis, Memcached');
+  });
+  it('되묻기 응답이 새 기술을 꺼내면 다시 만들고, 끝까지 남으면 leak true', async () => {
+    const leaked = { techs: [{ name: 'Kafka', role: 'solution' }] };
+    const { turn, calls } = await service({
+      clarify: [{ reply: 'Kafka를 쓴다고 보세요.' }, { reply: 'Kafka를 쓴다고 보세요.' }],
+      leak: [leaked, leaked],
+    });
+    const r = await turn.replyToClarification(clarify);
+    expect(calls.filter((c) => c.kind === 'clarify')).toHaveLength(2);
+    expect(calls[2].user).toContain('해답으로 꺼내면 안 되는 기술: Kafka');
+    expect(r.leak).toBe(true);
+    expect(r.reply).toBe('Kafka를 쓴다고 보세요.');
+    expect(r.usage).toHaveLength(calls.length);
+  });
+  it('되묻기 응답이 모른다고 한 기술을 말하면 위반이다', async () => {
+    const { turn, calls } = await service({
+      clarify: [{ reply: 'Memcached는 한 대입니다.' }, { reply: '서버는 한 대입니다.' }],
+      leak: [{ techs: [{ name: 'Memcached', role: 'premise' }] }, { techs: [] }],
+    });
+    const r = await turn.replyToClarification({ ...clarify, avoidTechs: ['Memcached'] });
+    const retry = calls.filter((c) => c.kind === 'clarify')[1].user;
+    expect(retry).toContain('지원자가 모른다고 해서 질문에 다시 넣으면 안 되는 기술: Memcached');
+    expect(retry).not.toContain('해답으로 꺼내면 안 되는 기술');
+    expect(r).toMatchObject({ reply: '서버는 한 대입니다.', leak: false });
+  });
+});
+
+describe('TurnService.pickJobRole', () => {
+  it('직무와 사용량을 돌려준다', async () => {
+    const { turn, calls } = await service({ jobRole: [{ role: 'security' }] });
+    expect(await turn.pickJobRole('JWT')).toEqual({
+      role: 'security',
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+    expect(calls.map((c) => c.role)).toEqual(['analyze']);
   });
 });
 
