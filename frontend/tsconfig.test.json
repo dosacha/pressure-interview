@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "types": ["node"],
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "rewriteRelativeImportExtensions": true,
+    "noEmit": false,
+    "rootDir": ".",
+    "outDir": ".test"
+  },
+  "include": ["web/lib/**/*.ts"],
+  "exclude": []
+}

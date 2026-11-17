@@ -19,7 +19,14 @@
     "migration:show": "typeorm-ts-node-commonjs migration:show -d src/database/data-source.ts",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/data-source.ts",
-    "r1": "ts-node scripts/r1.ts"
+    "r1": "ts-node scripts/r1.ts",
+    "start:app": "npm run frontend:build && nest start",
+    "start:fake": "npm run frontend:build && ts-node scripts/run-fake-app.ts",
+    "frontend:typecheck": "tsc --noEmit -p frontend/tsconfig.json && tsc --noEmit -p frontend/web/tsconfig.json",
+    "frontend:lint": "eslint \"frontend/web/**/*.{ts,tsx}\" frontend/vite.config.ts",
+    "frontend:test": "node frontend/test.mjs",
+    "frontend:build": "vite build --config frontend/vite.config.ts --configLoader runner --logLevel warn",
+    "frontend:verify": "npm run frontend:typecheck && npm run frontend:lint && npm run frontend:test && npm run frontend:build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
@@ -39,19 +46,26 @@
     "@nestjs/cli": "^11.0.24",
     "@nestjs/schematics": "^11.1.0",
     "@nestjs/testing": "^11.2.7",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.19.43",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@types/supertest": "^7.2.1",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.9.0",
     "jest": "^30.4.2",
     "prettier": "^3.9.6",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "supertest": "^7.2.2",
+    "tailwindcss": "^4.3.3",
     "ts-jest": "^29.4.12",
     "ts-node": "^10.9.2",
     "typescript": "~5.9.3",
-    "typescript-eslint": "^8.66.0"
+    "typescript-eslint": "^8.66.0",
+    "vite": "^8.3.3"
   },
   "jest": {
     "moduleFileExtensions": [
