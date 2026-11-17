@@ -5,6 +5,7 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
 
+import { InterviewTurn } from '../src/session/interview-turn.entity';
 import { InterviewService, RNG } from '../src/session/interview.service';
 import { UsageService } from '../src/usage/usage.service';
 import { createFakeAnthropic, rawText, type FakeAnthropic } from './support/fake-anthropic';
@@ -73,6 +74,15 @@ describe('면접 HTTP API (e2e)', () => {
     for (const body of bodies)
       for (const mark of ['7731', '7732', '7733', '7734', '집요형', '조력형', '흔드는형'])
         expect(body).not.toContain(mark);
+    // 표식이 DB에는 있어야 위 단언이 뜻을 가진다
+    const rows = await app
+      .get(DataSource)
+      .getRepository(InterviewTurn)
+      .find({ where: { sessionId: id } });
+    const first = rows.sort((x, y) => x.seq - y.seq)[0];
+    expect(first.question.answerKey.keyPoints).toContain('비밀-핵심-7731');
+    expect(first.question.assumption.statement).toBe('비밀-가정-7732');
+    expect(first.analysis?.defects[0].note).toBe('비밀-메모-7733');
   });
 
   it('모델이 깨진 JSON을 주면 502이고 본문에 응답 글자가 없다 (Review Focus 1)', async () => {

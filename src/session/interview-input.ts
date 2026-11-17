@@ -78,7 +78,7 @@ export function parseAnswerInput(body: unknown): {
   const answerStartMs =
     raw.answerStartMs === undefined || raw.answerStartMs === null
       ? null
-      : integer(raw.answerStartMs, 'answerStartMs', 0, Number.MAX_SAFE_INTEGER, issues);
+      : integer(raw.answerStartMs, 'answerStartMs', 0, 2147483647, issues);
   unexpected(raw, ['turnId', 'text', 'answerStartMs'], issues);
   fail(issues);
   return { turnId: turnId!, text: answer!, answerStartMs };

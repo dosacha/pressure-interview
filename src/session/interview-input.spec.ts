@@ -39,6 +39,10 @@ describe('면접 입력 검증', () => {
     ]);
     expect(parseAnswerInput(base).answerStartMs).toBeNull();
     expect(parseAnswerInput({ ...base, answerStartMs: 0 }).answerStartMs).toBe(0);
+    expect(parseAnswerInput({ ...base, answerStartMs: 2147483647 }).answerStartMs).toBe(2147483647);
+    expect(issuesOf(() => parseAnswerInput({ ...base, answerStartMs: 2147483648 }))).toEqual([
+      { field: 'answerStartMs', reason: 'OUT_OF_RANGE' },
+    ]);
   });
 
   it('turnId는 uuid여야 하고 답은 앞뒤 공백을 뗀다', () => {
