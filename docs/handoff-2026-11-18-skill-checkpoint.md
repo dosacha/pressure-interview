@@ -126,7 +126,12 @@ node "C:/Users/dosac/.claude/skills/pressure-interview/scripts/cli.mjs" doctor -
 
 - 계획의 넷: 프롬프트를 옮겨 적지 않고 도구로 옮긴 것, 병합 전에 설치해 시험하는 순서, "기다리는 덧붙임"을 세션 파일이 아니라 턴의 파일에 둔 것, 시스템 프롬프트를 인자로 넘기는 것.
 - `docs/skill-review.md` 6장의 열넷. 그 가운데 사용자가 한 번 봐 주면 좋은 것: 진행 중인 면접은 하나만(설계 6.1), 실패하면 알리고 다시 할지 묻는다, 출력 상한 16,000토큰, 시작이 실패했을 때 "같은 주제로 다시 시작"을 안내하게 고친 것(계획의 결함이었다).
-- 앱 쪽에 남은 것(스킬과 별개): `feat/unknown-tech-volunteered`를 `main`에 병합할지, `docs/b-review.md` 5장 6~10번. 주 checkout의 `docs/handoff-2026-11-18-skill.md` 3장에 있다.
+- 앱 쪽에 남은 것(스킬과 별개). 앞의 인수인계 문서 `docs/handoff-2026-11-18-skill.md`는 사용자 지시로 2026-11-18에 지웠다(원문은 `git show 9fd4c38:docs/handoff-2026-11-18-skill.md`). 그 3장에 있던 것을 옮긴다:
+  - `feat/unknown-tech-volunteered`를 `main`에 병합할지. 사용자가 직접 써 본 뒤에 묻기로 했다. 모델이 `selfUnknownTechs`를 실제로 채우는지는 확인하지 않았다.
+  - 답이 없는 [제안]: 주 checkout의 `docs/b-review.md` 5장 6~10번(캐시 수명, 교과형 문단의 자리, 이름 위반 시도의 전제 검사 결과, 넷째 분류의 이름과 범위와 빈틈, 스스로 꺼낸 모름의 범위).
+  - 앱에서 실제로 확인하지 못한 것: 잘 답함이 된 가정이 다음 면접에서 빠지는지, 24시간 뒤 기억이 저절로 실리는지, 복기가 틀린 분석을 잡는지.
+  - 복기 문장에 내부 이름이 보인다("p1", "defects", "keyPoints", 정답지의 "[4]"). 프롬프트 변경이라 손대지 않았다.
+  - 모두 끝나면 앱의 작업 원장 폴더(주 checkout의 `.superpowers/sdd/2026-11-17-interview-app/`)를 지워도 된다.
 
 ## 6. 지켜야 할 것
 
