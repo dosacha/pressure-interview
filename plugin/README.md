@@ -1,0 +1,142 @@
+# 압박 면접 스킬
+
+기술 주제를 주면 면접관 셋이 번갈아 압박 질문을 하고, 끝나면 복기 문서를 만들어 주는 Claude Code 스킬이다. 서버나 데이터베이스 없이 Claude Code 명령줄(`claude -p`)만으로 돈다. 저장소 뿌리의 앱(`README.md`)과 같은 면접 엔진을 옮긴 것이고, 앱과 기억을 따로 쓴다.
+
+## 필요한 것
+
+- Claude Code **명령줄** `claude`. 구독(claude.ai) 계정으로 로그인돼 있어야 한다. 데스크톱 앱만 설치했다면 명령줄을 따로 설치해야 한다.
+- Node 24.
+- npm으로 설치해 실행 파일이 `claude.cmd`인 경우에는 설정의 `claudeCommand`를 `["claude.cmd"]`로 고친다(8장).
+
+## 설치
+
+`~/.claude/skills/pressure-interview`를 이 저장소의 `plugin/skills/pressure-interview`로 잇는다. 저장소를 고치면 스킬에 바로 반영된다.
+
+```
+# Windows (cmd)
+mklink /J "%USERPROFILE%\.claude\skills\pressure-interview" "<저장소>\plugin\skills\pressure-interview"
+
+# macOS, Linux
+ln -s "<저장소>/plugin/skills/pressure-interview" ~/.claude/skills/pressure-interview
+```
+
+새 세션을 열고 `/pressure-interview`를 친다. 처음에는 면접 기록을 둘 폴더를 묻는다.
+
+## 쓰는 법
+
+| 사용자가 치는 것 | 하는 일 |
+|---|---|
+| `/pressure-interview <주제>` | 새 면접을 시작한다 |
+| `/pressure-interview` | 상태: 진행 중인 면접, 다시 연습할 주제, 최근 면접과 id |
+| `/pressure-interview 이어서` | 진행 중인 면접을 이어 한다. 열린 질문을 다시 보여 주고, 실패해 멈춘 곳이 있으면 거기서부터 한다 |
+| `/pressure-interview 끝` | 지금 면접을 일찍 끝낸다 |
+| `/pressure-interview 복기 [면접 id]` | 끝난 면접의 복기 문서를 만든다 |
+| `/pressure-interview 고침 <질문 번호> <잘답함/흔들림/틀림> [면접 id]` | 가정 결과를 고치고 기억을 다시 맞춘다 |
+| `/pressure-interview 표시 <질문 번호> <예상/예상밖> [면접 id]` | 예상 표시를 남긴다 |
+| `/pressure-interview 추이` | 추이 문서를 다시 만들어 보여 준다 |
+
+- **질문이 열려 있는 동안 보내는 메시지는 모두 답이다.** 되묻는 말이든 "모르겠습니다"든 그대로 엔진에 넘어간다. 멈추려면 `/pressure-interview 끝`을 친다.
+- 면접은 한 번에 하나만 진행할 수 있다. 진행 중인 면접이 있는데 새 주제를 주면 거절하고 `이어서`나 `끝`을 안내한다.
+- 시작이 실패하면 면접이 남지 않는다. 같은 주제로 다시 시작한다.
+- 복기, 고침, 표시는 id를 생략하면 가장 최근에 끝난 면접에 한다. 고침과 표시는 복기가 끝난 면접에만 한다.
+
+## 호출과 한도
+
+- 질문마다 모델 호출이 5~6회 나간다: 질문 문장, 흘림 검사, 가정을 바꾼 질문이면 전제 검사, 정답지 작성, 정답지 검증, 답 분석.
+- 시작할 때 1회. 질문을 다시 만들거나 되묻기가 있으면 그만큼 더 나간다. 복기는 답한 질문마다 1회다.
+- 앱의 실제 한 판(질문 6)은 35회 + 복기 6회였다.
+- **구독 한도를 쓴다.** API 키를 쓰지 않는다. 엔진이 `ANTHROPIC`·`CLAUDE`로 시작하는 환경 변수를 지우고 `claude`를 부르고, 시작할 때 구독 로그인인지 확인한다. 호출마다 출력 상한은 `CLAUDE_CODE_MAX_OUTPUT_TOKENS=16000`(앱과 같은 값)으로 준다.
+- 한 판이 구독 한도를 얼마나 쓰는지는 아직 재 본 값이 없다. 재 본 값이 생기면 여기에 적는다.
+- 한도에 걸리면 엔진은 다시 부르지 않는다. 한도가 풀린 뒤 `이어서`로 멈춘 곳부터 한다.
+
+## 숨긴 폴더
+
+정답지와 질문 의도는 면접 폴더의 `interviews/<면접>/hidden/`에 저장된다. **면접이 끝나기 전에는 열지 않는다.** 열면 보이고, 연습이 안 된다. 오류의 원문은 같은 폴더의 `errors.log`에만 쓴다. 진행자(모델)도 이 폴더를 읽지 않게 지시해 두었지만, 지시로만 막은 것이라 실제 한 판에서 확인해야 한다.
+
+## 권한 창
+
+기본 권한 모드에서는 답 하나마다 파일 쓰기 한 번(답 파일)과 명령 실행 한 번(엔진)에 권한을 물을 수 있다. 아래 허용 규칙을 `~/.claude/settings.json`의 `permissions.allow`에 넣으면 묻지 않는다. 스킬은 설정 파일을 고치지 않는다. 직접 넣어야 한다.
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(node \"<스킬 폴더>/scripts/cli.mjs\" *)",
+      "PowerShell(node \"<스킬 폴더>/scripts/cli.mjs\" *)",
+      "Edit(//c/<면접 폴더의 경로>/interviews/**/answers/*)"
+    ]
+  }
+}
+```
+
+- `<스킬 폴더>`는 `~/.claude/skills/pressure-interview`를 풀어 쓴 경로다. Bash와 PowerShell 도구가 별개의 규칙이라 둘 다 적는다. 끝의 ` *`는 어떤 인자든, 인자가 없는 경우까지 맞는다.
+- 파일 쓰기는 `Write(...)` 규칙이 아니라 `Edit(...)` 규칙으로 묶인다. 공식 문서가 `Write(경로)` 규칙은 맞지 않는다고 하고, `Edit` 규칙이 파일을 고치는 내장 도구 전체에 적용된다고 한다.
+- 경로는 gitignore 꼴이다. `//`로 시작하면 파일 시스템 뿌리에서의 절대 경로다. Windows는 경로를 POSIX 꼴로 바꿔 맞추므로 `C:\Users\나\면접`은 `//c/Users/나/면접`이다. macOS·Linux는 `Edit(//<면접 폴더의 절대 경로>/interviews/**/answers/*)`나 홈 아래라면 `Edit(~/<홈 아래 경로>/interviews/**/answers/*)`로 쓴다. 맨 앞 `/` 하나는 설정 파일 위치 기준의 상대 경로라 절대 경로가 아니다.
+- 권한 창에서 "Yes, and don't ask again"을 고르면, 명령(Bash)은 저장소와 명령마다 계속 유지되고(`.claude/settings.local.json`에 저장) 파일 수정은 세션이 끝날 때까지만 유지된다.
+
+확인하지 못함:
+
+- 따옴표 안의 경로가 든 명령(`node "<스킬 폴더>/scripts/cli.mjs" <명령>`)을 위 규칙이 맞추는지는 공식 문서에 없다. 규칙이 안 맞으면 권한 창이 뜬다. 그때 창에서 허용하거나 규칙의 꼴을 고친다.
+- 세션의 작업 폴더 밖에 있는 면접 폴더에 `Edit` 허용 규칙만으로 쓸 수 있는지도 문서에 없다. 문서가 정한 방법은 면접 폴더에서 세션을 시작하거나, 그 폴더를 작업 폴더로 추가하는 것이다.
+
+## 설정
+
+`~/.pressure-interview/config.json`(없으면 처음 부를 때 만든다). 적은 항목만 바뀌고 나머지는 기본값이다. 홈 폴더를 바꾸려면 환경 변수 `PRESSURE_INTERVIEW_HOME`을 쓴다.
+
+| 항목 | 기본값 | 뜻 |
+|---|---|---|
+| `dataDir` | 없음 | 면접 기록을 두는 폴더. `setup --data-dir`가 정한다 |
+| `questionLimit` | 6 | 한 판의 질문 수(2~30) |
+| `maxConsecutive` | 2 | 같은 면접관이 이어서 물을 수 있는 횟수 |
+| `maxRegenerations` | 1 | 질문을 다시 만드는 횟수 |
+| `reissueAfterHours` | 24 | 다시 연습할 가정을 다시 내기까지 기다리는 시간(시간 단위) |
+| `reviewConcurrency` | 3 | 복기 호출을 동시에 도는 수 |
+| `callTimeoutMs` | 180000 | 호출 하나의 시간 상한(ms) |
+| `pollMs` | 300 | 정답지 뒤 작업을 기다릴 때 확인 간격(ms) |
+| `claudeCommand` | `["claude"]` | 부르는 명령. `claude.cmd`면 `["claude.cmd"]` |
+| `keepEnv` | `[]` | 지우지 않고 남길 환경 변수 이름 |
+| `calls.<종류>` | 아래 | 호출 종류별 `model`과 `effort`(low, medium, high, xhigh, max) |
+
+`calls` 기본값: `jobRole` sonnet/medium, `question` opus/medium, `leak` sonnet/low, `premise`·`answerKey`·`verify`·`analyze`·`clarify` opus/medium, `review` opus/high. 종류별로 일부만 적어도 합쳐진다.
+
+## 문제가 생기면
+
+```
+node "<스킬 폴더>/scripts/cli.mjs" doctor
+node "<스킬 폴더>/scripts/cli.mjs" doctor --call
+```
+
+설정 파일, 면접 폴더, `claude`의 버전과 로그인을 점검한다. `--call`은 모델 호출을 한 번 더 시험하며 한도를 조금 쓴다. 실패의 `code`와 뜻:
+
+| code | 뜻 |
+|---|---|
+| `bad_config` | 설정 파일을 읽지 못했거나 값이 틀렸다 |
+| `bad_args` | 명령이나 인자가 맞지 않다 |
+| `cli_missing` | `claude` 명령을 찾지 못했다 |
+| `not_logged_in` | 구독(claude.ai) 로그인이 아니다 |
+| `interview_open` | 진행 중인 면접이 있다. `이어서`나 `끝` |
+| `no_interview` | 해당하는 면접이 없다 |
+| `no_answer` | 답 파일이 없거나 비었다 |
+| `finished` | 이미 끝난 면접이다 |
+| `not_finished` | 끝나지 않은 면접이라 복기할 수 없다 |
+| `not_reviewed` | 복기가 끝나지 않아 고침·표시를 할 수 없다 |
+| `not_reviewable` | 그 번호의 질문은 고치거나 표시할 수 없다 |
+| `not_found` | 그 id의 면접이 없다 |
+| `memory_sync_failed` | 가정 기억을 맞추지 못했다. `복기`를 다시 한다 |
+| `usage_limit` | 사용 한도에 걸렸다. 풀린 뒤 이어서 한다 |
+| `refused` | 모델이 응답을 거절했다. 다시 하면 멈춘 곳부터 한다 |
+| `schema_failed` | 응답이 정해진 모양과 맞지 않았다. 같다 |
+| `timeout` | 호출이 시간 상한을 넘었다. 같다 |
+| `other` | 그 밖의 오류. 같다 |
+
+엔진은 실패한 모델 호출을 스스로 다시 부르지 않는다. 다시 할지는 사용자가 정한다. 원래 오류 문장은 출력에 나오지 않는다. 면접이 끝난 뒤에 `hidden/errors.log`를 열어 본다.
+
+## 개발
+
+```
+node --test "plugin/test/**/*.test.mjs"     # 저장소 뿌리에서
+```
+
+- 테스트는 실제 모델을 부르지 않는다. 가짜 `claude`(`plugin/test/fake-claude.mjs`)와 임시 폴더만 쓴다.
+- `scripts/lib/app/`와 `plugin/test/app/`은 앱의 소스를 옮겨 만든 파일이다. 손으로 고치지 않는다. 바꿀 일이 있으면 `tools/port-app-src.mjs`를 고쳐 다시 만든다.
+- 옮긴 기준 커밋은 `aeae0dd`다.

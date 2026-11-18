@@ -82,3 +82,7 @@ npm run start:fake
 - `src/memory/` 가정별 기억
 - `frontend/` 화면(React, Vite, Tailwind). 빌드한 결과를 서버가 같은 주소에서 내려 준다
 - `scripts/` e2e 실행기, 가짜 응답 앱, R1 실행기
+
+## 스킬
+
+같은 면접을 서버 없이 Claude Code 스킬로 돌리는 것이 `plugin/`에 있다. 설치와 쓰는 법, 호출 횟수와 한도는 `plugin/README.md`에 있다.
