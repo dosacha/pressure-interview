@@ -1,7 +1,7 @@
 # 압박 면접 스킬 — 설계 (서버 없는 Claude Code 스킬)
 
 - 날짜: 2026-11-18
-- 상태: **초안. 사용자 승인 전.** 검토자 셋(만드는 사람 관점, 앱·결정과의 일치, 동작과 숨김 누출)의 지적 27건을 반영한 판이다.
+- 상태: **사용자 승인 (2026-11-18, 원문: "승인, 계획 작성").** 검토자 셋(만드는 사람 관점, 앱·결정과의 일치, 동작과 숨김 누출)의 지적 27건을 반영한 판이다. 구현 계획은 [`docs/plans/2026-11-18-pressure-interview-skill.md`](../plans/2026-11-18-pressure-interview-skill.md).
 - 표기: **[결정]** 사용자가 말했거나 선택지에서 고른 것. **[제안]** Claude가 정한 것. 문서 승인으로 함께 수락된다. **달라짐**은 앱과 다르게 도는 곳이다.
 - 근거: 앱의 설계 [`2026-11-16-pressure-interview-design.md`](2026-11-16-pressure-interview-design.md)(승인됨, 이하 "앱 설계"), 인수인계 문서 `docs/handoff-2026-11-18-skill.md`(브랜치 `feat/unknown-tech-volunteered`의 `9fd4c38`에 있다. 이 브랜치에는 없다), 2026-11-18의 확인 기록 `.superpowers/sdd/2026-11-18-skill/findings-5.1.md`(주 checkout의 작업 원장, git에 올리지 않음. 필요한 내용은 이 문서 12장에 옮겼다).
 - 작업 위치: 브랜치 `feat/pressure-interview-skill`(`main`의 `cdb3ba6`에서 냄), worktree `C:\Users\dosac\projects\interview-skill`.
