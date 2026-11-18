@@ -44,12 +44,33 @@ const SPECS = [
   'src/session/session-rules.spec.ts',
   'src/memory/memory-rules.spec.ts',
   'src/review/stats.spec.ts',
+  'src/interview/turn.service.spec.ts',
 ];
 
 // 손으로 옮긴 모듈: 원본 경로 → { path: 저장소 뿌리 기준 새 경로, exports: 내보내는 이름 목록 }
-const EXTERNAL = {};
+const EXTERNAL = {
+  'src/interview/turn.service.ts': { path: 'plugin/skills/pressure-interview/scripts/lib/turn.service.mjs', exports: ['TurnService'] },
+};
 // 타입을 걷어 내기 전 원본 글자 바꾸기: 원본 경로 → [[찾을 문자열, 바꿀 문자열], ...]. 찾는 글자가 없으면 오류.
-const PATCHES = {};
+const PATCHES = {
+  'src/interview/turn.service.spec.ts': [
+    [`async function service(queues: Record<string, unknown[]>) {
+  const fake = fakeLlm(queues);
+  const mod = await Test.createTestingModule({
+    providers: [
+      TurnService,
+      { provide: LlmService, useValue: fake.llm },
+      { provide: engineConfig.KEY, useValue: readEngineConfig({}) },
+    ],
+  }).compile();
+  return { turn: mod.get(TurnService), calls: fake.calls };
+}`,
+      `async function service(queues: Record<string, unknown[]>) {
+  const fake = fakeLlm(queues);
+  return { turn: new TurnService(fake.llm as never, { maxConsecutive: 2, maxRegenerations: 1 }), calls: fake.calls };
+}`],
+  ],
+};
 
 const posix = path.posix;
 const show = (p) => execFileSync('git', ['show', `${REF}:${p}`], { encoding: 'utf8', maxBuffer: 1 << 26 });
