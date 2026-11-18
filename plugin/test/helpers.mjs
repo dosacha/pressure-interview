@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -5,7 +6,21 @@ import { fileURLToPath } from 'node:url';
 
 import { saveConfig } from '../skills/pressure-interview/scripts/lib/config.mjs';
 
-const FAKE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fake-claude.mjs');
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const FAKE = path.join(HERE, 'fake-claude.mjs');
+const CLI = path.join(HERE, '..', 'skills', 'pressure-interview', 'scripts', 'cli.mjs');
+
+// 엔진 명령을 진짜 프로세스로 한 번 돌린다.
+export function run(world, args) {
+  const r = spawnSync(process.execPath, [CLI, ...args], { env: world.env, encoding: 'utf8' });
+  return { status: r.status, stdout: r.stdout, stderr: r.stderr, json: JSON.parse(r.stdout) };
+}
+
+// 진행자처럼 답 파일에 글을 쓰고 answer를 돌린다.
+export function answer(world, out, text) {
+  fs.writeFileSync(out.answerFile, text);
+  return run(world, ['answer']);
+}
 const tmp = (label) => fs.mkdtempSync(path.join(os.tmpdir(), `면접 기록 ${label} `));
 
 export function makeWorld(configPatch = {}) {
@@ -24,6 +39,11 @@ export function push(fakeDir, kind, response) {
   // 차지된 파일(.used)도 세어 번호가 겹치지 않게 한다
   const n = fs.readdirSync(dir).length + 1;
   fs.writeFileSync(path.join(dir, `${String(n).padStart(3, '0')}.json`), JSON.stringify(response));
+}
+
+// 종류마다 같은 성공 응답을 n개씩 쌓는다. 앞에 push한 응답이 먼저 쓰인다.
+export function stock(fakeDir, replies, n = 6) {
+  for (const [kind, data] of Object.entries(replies)) for (let i = 0; i < n; i++) push(fakeDir, kind, { data });
 }
 
 export function fakeCalls(fakeDir) {
@@ -75,6 +95,20 @@ export const review = (over = {}) => ({
   reactions: [],
   assumption: { result: 'none', note: '', sameAs: null },
   keyProblems: [],
+  ...over,
+});
+const NO_CORRECTIONS = { premiseOk: true, problems: [], corrections: { lists: [], alternatives: { changed: false, items: [] } } };
+// 가짜 실행기에 쌓을 종류별 성공 응답.
+export const replies = (over = {}) => ({
+  jobRole: { role: 'dba' },
+  question: draft(),
+  leak: { techs: [] },
+  premise: { premiseOk: true, problems: [] },
+  answerKey: key(),
+  verify: NO_CORRECTIONS,
+  analyze: analysis(),
+  clarify: { reply: '범위는 한 대의 서버입니다.' },
+  review: review(),
   ...over,
 });
 export const panel = () => [
