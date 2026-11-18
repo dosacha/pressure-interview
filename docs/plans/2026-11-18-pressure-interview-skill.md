@@ -309,7 +309,7 @@ Expected: FAIL (`turn.service.mjs` 없음)
   - `finish(id): Promise<View>`
   - `complete(id, seq): Promise<void>` — 정답지를 쓰는 일. 순서: `readKey`가 있으면 끝 → `acquireKeyLock`을 못 잡으면 끝 → **잡은 뒤 `readKey`를 다시 보고 있으면 풀고 끝** → `completeQuestion` → `writeKey` → 푼다. 실패하면 `store.logError`만 하고 푼다(던지지 않는다).
   - `view(id): View`
-  - `View` = `{ id, topic, status: 'in_progress' | 'finished', questionLimit, turnCount, open: { seq, roleName, addOn, text, clarifications: { ask, reply }[], inputNo } | null, pending: 'answer' | 'retry' | null, closing: string | null }`. `open`은 답이 없는 마지막 턴이다. `inputNo`는 그 턴의 되묻기 수 + 1. `pending`은 끝났으면 `null`, 마지막 턴에 답이 없으면 `'answer'`, 있으면 `'retry'`. `closing`은 끝났으면 `CLOSING_TEXT`. 숨길 값은 하나도 넣지 않는다(앱의 `toInterviewView`와 같다).
+  - `View` = `{ id, topic, status: 'in_progress' | 'finished', questionLimit, turnCount, open: { seq, roleName, addOn, text, clarifications: { ask, reply }[], inputNo } | null, pending: 'answer' | 'retry' | null, closing: string | null }`. `open`은 답이 없는 마지막 턴이다(끝난 면접이면 `null`). `inputNo`는 그 턴의 되묻기 수 + 1. `pending`은 끝났으면 `null`, 마지막 턴에 답이 없으면 `'answer'`, 있으면 `'retry'`. `closing`은 끝났으면 `CLOSING_TEXT`. 숨길 값은 하나도 넣지 않는다(앱의 `toInterviewView`와 같다).
   - 실패한 모델 호출의 `EngineError`는 그대로 던진다. 그 전에 저장한 것은 남는다.
 - 흐름은 `aeae0dd:src/session/interview.service.ts`의 `start`, `submitAnswer`, `proceed`, `analyze`, `replyToClarification`, `nextQuestion`, `finish`, `answerKeyInput`, `historyOf`를 그대로 따른다. 다른 곳:
   - 저장은 `store`. 세션 잠금(`locked`)은 없다(한 세션이 한 번에 명령 하나를 돌린다).
@@ -465,7 +465,8 @@ Expected: FAIL (`turn.service.mjs` 없음)
 | `doctor` | 결과를 알려 준다. |
 
 - 실패 출력: `{ ok: false, kind: 'error', code, say, next }`. `code`는 `EngineError`의 것이고 그 밖의 오류는 `other`다. `say`는 코드별 고정 문장이다(원래 오류 문장을 넣지 않는다). 코드: `bad_config`, `bad_args`, `cli_missing`, `not_logged_in`, `interview_open`, `no_interview`, `no_answer`, `finished`, `not_finished`, `not_reviewed`, `not_reviewable`, `not_found`, `memory_sync_failed`, `usage_limit`, `refused`, `schema_failed`, `timeout`, `other`.
-- 실패의 `next`는 모두 "hidden 폴더와 errors.log를 읽지 않는다."로 끝난다. 그 앞 문장: `usage_limit`은 "다시 시도하지 않는다. 한도가 풀린 뒤 사용자가 이어서를 치면 resume을 실행한다.", `no_answer`는 "사용자의 답을 answerFile에 쓴 뒤 answer를 다시 실행한다."(이때 출력에 `answerFile`도 싣는다), `interview_open`은 "사용자가 정하는 대로 resume으로 이어 가거나 finish로 끝낸다.", `memory_sync_failed`는 "사용자가 다시 하겠다고 하면 review를 실행한다.", 모델 호출의 실패(`refused`, `schema_failed`, `timeout`, `other`)는 "사용자가 다시 하겠다고 하면 resume을 실행한다.", 나머지는 "say를 보여 준다."
+- 실패의 `next`는 모두 "hidden 폴더와 errors.log를 읽지 않는다."로 끝난다. 그 앞 문장: `usage_limit`은 "다시 시도하지 않는다. 한도가 풀린 뒤 사용자가 이어서를 치면 resume을 실행한다.", `no_answer`는 "사용자의 답을 answerFile에 쓴 뒤 answer를 다시 실행한다."(이때 출력에 `answerFile`도 싣는다), `interview_open`은 "사용자가 정하는 대로 resume으로 이어 가거나 finish로 끝낸다.", `memory_sync_failed`는 "사용자가 다시 하겠다고 하면 review를 실행한다.", 모델 호출의 실패(`refused`, `schema_failed`, `timeout`, `other`)는 "사용자가 다시 하겠다고 하면 resume을 실행한다.", `no_interview`는 "사용자가 주제를 주면 start를 실행한다.", 나머지는 "say를 보여 준다."
+- **`start`가 실패했을 때는 따로 둔다**(실행 중 판단, 2026-11-18. 실패한 시작은 면접을 남기지 않아 `resume`으로 이어 갈 수 없다): `usage_limit`이면 "다시 시도하지 않는다. 한도가 풀린 뒤 사용자가 같은 주제로 다시 시작하면 start를 실행한다.", 그 밖의 모델 호출 실패면 "사용자가 다시 하겠다고 하면 같은 주제로 start를 다시 실행한다."
 - 진입점은 `main`을 `try`로 감싸고 `uncaughtException`과 `unhandledRejection`에도 같은 처리기를 건다. 처리기는 `store.logError`(가능하면)에 원래 오류와 `EngineError.detail`을 쓰고 실패 출력을 낸다. 시작할 때 `process.removeAllListeners('warning')`으로 Node의 경고 출력을 끈다.
 - 뒤 작업은 `spawn(process.execPath, [이 파일의 경로, 'complete', id, String(seq)], { detached: true, stdio: 'ignore', windowsHide: true }).unref()`로 띄운다. `complete` 명령은 아무것도 출력하지 않고 실패는 `errors.log`에만 쓴다.
 - `llmFor(id)`는 `createLlm({ config, record: (row) => store.appendCall(id, row) })`.
