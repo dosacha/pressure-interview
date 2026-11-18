@@ -27,6 +27,7 @@ const kind = KINDS.find(([field]) => required.includes(field))?.[1] ?? 'unknown'
 log({
   kind, args, system: valueOf('--system-prompt'), user,
   envNames: Object.keys(process.env).filter((n) => /^(CLAUDE|ANTHROPIC)/.test(n)),
+  maxOutputTokens: process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS ?? null,
 });
 
 // 이름이 가장 앞선 *.json을 *.used로 바꿔 차지한다. 이름 바꾸기가 실패하면 다음 파일을 본다.

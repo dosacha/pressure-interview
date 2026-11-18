@@ -77,7 +77,22 @@ test('자식은 세션의 변수와 API 키를 받지 않는다', async () => {
   push(world.fakeDir, 'jobRole', { data: { role: 'dba' } });
   const env = { ...world.env, ANTHROPIC_API_KEY: 'k', CLAUDE_CODE_ENTRYPOINT: 'x' };
   await createLlm({ config: world.config, record() {}, env }).callJson(REQ);
-  assert.deepEqual(fakeCalls(world.fakeDir)[0].envNames, []);
+  assert.deepEqual(fakeCalls(world.fakeDir)[0].envNames, ['CLAUDE_CODE_MAX_OUTPUT_TOKENS']);
+});
+
+test('자식은 출력 상한 16000을 받는다', async () => {
+  const world = makeWorld();
+  push(world.fakeDir, 'jobRole', { data: { role: 'dba' } });
+  const env = { ...world.env, CLAUDE_CODE_MAX_OUTPUT_TOKENS: '5' };
+  await createLlm({ config: world.config, record() {}, env }).callJson(REQ);
+  assert.equal(fakeCalls(world.fakeDir)[0].maxOutputTokens, '16000');
+});
+
+test('실패해도 한 번만 띄운다', async () => {
+  const world = makeWorld();
+  push(world.fakeDir, 'jobRole', { raw: 'x', exit: 1 });
+  await assert.rejects(createLlm({ config: world.config, record() {}, env: world.env }).callJson(REQ));
+  assert.equal(fakeCalls(world.fakeDir).length, 1);
 });
 
 test('record는 성공과 실패에 한 번씩 불린다', async () => {

@@ -83,6 +83,9 @@ const tokens = (usage = {}) => ({
   cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
 });
 
+// 설계 8장: 모델 출력 상한(앱의 값). 자식 환경에 childEnv 뒤에 넣는다.
+const MAX_OUTPUT_TOKENS = '16000';
+
 export function createLlm({ config, record, env = process.env }) {
   async function callJson({ kind, system, user, schema }) {
     const call = config.calls[kind];
@@ -91,7 +94,7 @@ export function createLlm({ config, record, env = process.env }) {
     const started = Date.now();
     const res = await run(config.claudeCommand, buildArgs({ model: call.model, effort: call.effort, system, schema }), {
       input: user,
-      env: childEnv(env, config.keepEnv),
+      env: { ...childEnv(env, config.keepEnv), CLAUDE_CODE_MAX_OUTPUT_TOKENS: MAX_OUTPUT_TOKENS },
       timeoutMs: config.callTimeoutMs,
     });
     const verdict = classify(res);
