@@ -177,10 +177,14 @@ test('실패 코드', async () => {
     assert.equal(r.json.kind, 'error');
     assert.equal(r.json.code, code);
     assert.ok(r.json.next.endsWith(TAIL), r.json.next);
-    if (code === 'usage_limit') assert.ok(r.json.next.startsWith('다시 시도하지 않는다.'));
     if (!['cli_missing', 'not_logged_in'].includes(code)) {
       assert.equal(modelCalls(w).filter((c) => c.kind === 'question').length, 1, code);
-      assert.ok(r.json.next.startsWith(code === 'usage_limit' ? '다시' : '사용자가 다시 하겠다고 하면 resume을 실행한다.'));
+      assert.equal(
+        r.json.next,
+        code === 'usage_limit'
+          ? `다시 시도하지 않는다. 한도가 풀린 뒤 사용자가 같은 주제로 다시 시작하면 start를 실행한다. ${TAIL}`
+          : `사용자가 다시 하겠다고 하면 같은 주제로 start를 다시 실행한다. ${TAIL}`,
+      );
     }
     if (code === 'timeout') {
       const pid = Number(fs.readFileSync(path.join(w.fakeDir, 'hang.pid'), 'utf8'));
@@ -197,6 +201,16 @@ test('실패 코드', async () => {
   }
 });
 
+test('실패한 start 뒤 resume은 no_interview이고 start를 안내한다', () => {
+  const w = makeWorld();
+  push(w.fakeDir, 'question', { raw: 'not json' });
+  stock(w.fakeDir, replies());
+  assert.equal(start(w).json.ok, false);
+  const r = run(w, ['resume']);
+  assert.equal(r.json.code, 'no_interview');
+  assert.equal(r.json.next, `사용자가 주제를 주면 start를 실행한다. ${TAIL}`);
+});
+
 test('실패한 뒤 resume이 이어 간다', () => {
   const w = makeWorld();
   push(w.fakeDir, 'analyze', { raw: 'x', exit: 1 });
@@ -206,6 +220,7 @@ test('실패한 뒤 resume이 이어 간다', () => {
   const a = answer(w, s.json, '한 번만 넣는 답');
   assert.equal(a.status, 1);
   assert.equal(a.json.code, 'other');
+  assert.ok(a.json.next.includes('resume을 실행한다'), a.json.next);
   const r = run(w, ['resume']);
   assert.equal(r.json.kind, 'question');
   assert.ok(r.json.say.startsWith('**질문 2/6 · '));

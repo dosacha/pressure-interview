@@ -58,10 +58,21 @@ const FAIL_NEXT = {
   no_answer: '사용자의 답을 answerFile에 쓴 뒤 answer를 다시 실행한다.',
   interview_open: '사용자가 정하는 대로 resume으로 이어 가거나 finish로 끝낸다.',
   memory_sync_failed: '사용자가 다시 하겠다고 하면 review를 실행한다.',
+  no_interview: '사용자가 주제를 주면 start를 실행한다.',
   refused: RETRY_RESUME,
   schema_failed: RETRY_RESUME,
   timeout: RETRY_RESUME,
   other: RETRY_RESUME,
+};
+
+// 실패한 start는 면접을 남기지 않으므로(session.json을 마지막에 쓴다) resume이 아니라 start를 안내한다.
+const RETRY_START = '사용자가 다시 하겠다고 하면 같은 주제로 start를 다시 실행한다.';
+const START_FAIL_NEXT = {
+  usage_limit: '다시 시도하지 않는다. 한도가 풀린 뒤 사용자가 같은 주제로 다시 시작하면 start를 실행한다.',
+  refused: RETRY_START,
+  schema_failed: RETRY_START,
+  timeout: RETRY_START,
+  other: RETRY_START,
 };
 
 const SETUP_NEEDED = {
@@ -98,7 +109,7 @@ function fail(error) {
     code,
     say: SAY[code],
     ...(code === 'no_answer' && error.answerFile ? { answerFile: error.answerFile } : {}),
-    next: `${FAIL_NEXT[code] ?? 'say를 보여 준다.'} hidden 폴더와 errors.log를 읽지 않는다.`,
+    next: `${(ctx.command === 'start' && START_FAIL_NEXT[code]) || FAIL_NEXT[code] || 'say를 보여 준다.'} hidden 폴더와 errors.log를 읽지 않는다.`,
   });
 }
 
