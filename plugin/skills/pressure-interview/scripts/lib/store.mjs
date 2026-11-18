@@ -165,15 +165,30 @@ export function openStore(dataDir) {
           fs.writeFileSync(file, JSON.stringify(mine), { flag: 'wx' });
         } catch (error) {
           if (error.code !== 'EEXIST') throw error;
+          let raw;
+          let mtimeMs;
+          try {
+            raw = fs.readFileSync(file, 'utf8');
+            mtimeMs = fs.statSync(file).mtimeMs;
+          } catch {
+            continue; // 그새 풀렸다
+          }
           let held = null;
           try {
-            held = readJson(file);
+            held = JSON.parse(raw);
           } catch {
-            // 깨진 잠금은 낡은 것으로 본다
+            // 읽지 못하는 잠금은 아직 쓰는 중일 수 있다
           }
-          const stale = !held || !pidAlive(held.pid) || !(Date.now() - held.at <= staleMs);
+          const stale = typeof held?.pid !== 'number'
+            ? Date.now() - mtimeMs > staleMs
+            : !pidAlive(held.pid) || !(Date.now() - held.at <= staleMs);
           if (!stale) return null;
-          fs.rmSync(file, { force: true });
+          // 같은 낡은 잠금을 본 다른 쪽이 그새 새로 잡았으면 지우지 않는다
+          try {
+            if (fs.readFileSync(file, 'utf8') === raw) fs.rmSync(file, { force: true });
+          } catch {
+            // 이미 없다
+          }
           continue;
         }
         return () => {
@@ -193,7 +208,7 @@ export function openStore(dataDir) {
     },
     readAnswerFile(file) {
       if (!fs.existsSync(file)) return null;
-      const text = fs.readFileSync(file, 'utf8').replace(/^﻿/, '').replace(/\r\n/g, '\n');
+      const text = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
       return text.trim() === '' ? null : text;
     },
     removeAnswerFile(file) {

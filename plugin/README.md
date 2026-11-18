@@ -6,7 +6,7 @@
 
 - Claude Code **명령줄** `claude`. 구독(claude.ai) 계정으로 로그인돼 있어야 한다. 데스크톱 앱만 설치했다면 명령줄을 따로 설치해야 한다.
 - Node 24.
-- npm으로 설치해 실행 파일이 `claude.cmd`인 경우에는 설정의 `claudeCommand`를 `["claude.cmd"]`로 고친다(8장).
+- 엔진은 `claude`를 셸 없이 띄운다. 지원하는 것은 네이티브 설치기가 깐 `claude.exe`(Windows)나 `claude`다. Windows에서 npm으로 설치해 실행 파일이 `.cmd` 실행기(`claude.cmd`)인 경우는 셸 없이 띄울 수 없어 `cli_missing`으로 끝난다. 아래 "설정" 절의 `claudeCommand`를 `["node", "<npm 전역 폴더>/node_modules/@anthropic-ai/claude-code/cli.js"]`처럼 node와 패키지의 CLI 스크립트로 두는 방법이 있을 수 있지만, **확인하지 못함**이다.
 
 ## 설치
 
@@ -51,7 +51,7 @@ ln -s "<저장소>/plugin/skills/pressure-interview" ~/.claude/skills/pressure-i
 
 ## 숨긴 폴더
 
-정답지와 질문 의도는 면접 폴더의 `interviews/<면접>/hidden/`에 저장된다. **면접이 끝나기 전에는 열지 않는다.** 열면 보이고, 연습이 안 된다. 오류의 원문은 같은 폴더의 `errors.log`에만 쓴다. 진행자(모델)도 이 폴더를 읽지 않게 지시해 두었지만, 지시로만 막은 것이라 실제 한 판에서 확인해야 한다.
+정답지와 질문 의도는 면접 폴더의 `interviews/<면접>/hidden/`에 저장된다. **면접이 끝나기 전에는 열지 않는다.** 열면 보이고, 연습이 안 된다. 오류의 원문은 그 면접의 `hidden/errors.log`에 쓰고, 면접이 생기기 전에 실패한 시작은 면접 폴더 뿌리의 `errors.log`에 쓴다. 둘 다 면접 중에는 열지 않는다. 진행자(모델)도 이 폴더를 읽지 않게 지시해 두었지만, 지시로만 막은 것이라 실제 한 판에서 확인해야 한다.
 
 ## 권한 창
 
@@ -85,7 +85,7 @@ ln -s "<저장소>/plugin/skills/pressure-interview" ~/.claude/skills/pressure-i
 
 | 항목 | 기본값 | 뜻 |
 |---|---|---|
-| `dataDir` | 없음 | 면접 기록을 두는 폴더. `setup --data-dir`가 정한다 |
+| `dataDir` | 없음 | 면접 기록을 두는 폴더. `setup --data-dir`가 정한다. 절대 경로나 `~`로 시작하는 경로만 받는다 |
 | `questionLimit` | 6 | 한 판의 질문 수(2~30) |
 | `maxConsecutive` | 2 | 같은 면접관이 이어서 물을 수 있는 횟수 |
 | `maxRegenerations` | 1 | 질문을 다시 만드는 횟수 |
@@ -93,7 +93,7 @@ ln -s "<저장소>/plugin/skills/pressure-interview" ~/.claude/skills/pressure-i
 | `reviewConcurrency` | 3 | 복기 호출을 동시에 도는 수 |
 | `callTimeoutMs` | 180000 | 호출 하나의 시간 상한(ms) |
 | `pollMs` | 300 | 정답지 뒤 작업을 기다릴 때 확인 간격(ms) |
-| `claudeCommand` | `["claude"]` | 부르는 명령. `claude.cmd`면 `["claude.cmd"]` |
+| `claudeCommand` | `["claude"]` | 부르는 명령과 앞 인자. 셸 없이 띄우므로 `.cmd` 실행기는 쓸 수 없다("필요한 것" 절) |
 | `keepEnv` | `[]` | 지우지 않고 남길 환경 변수 이름 |
 | `calls.<종류>` | 아래 | 호출 종류별 `model`과 `effort`(low, medium, high, xhigh, max) |
 
@@ -106,13 +106,13 @@ node "<스킬 폴더>/scripts/cli.mjs" doctor
 node "<스킬 폴더>/scripts/cli.mjs" doctor --call
 ```
 
-설정 파일, 면접 폴더, `claude`의 버전과 로그인을 점검한다. `--call`은 모델 호출을 한 번 더 시험하며 한도를 조금 쓴다. 실패의 `code`와 뜻:
+설정 파일, 면접 폴더, `claude`의 버전(`claude --version`, 모델 호출 아님)과 로그인을 점검한다. `--call`은 모델 호출을 한 번 더 시험하며 한도를 조금 쓴다. 실패의 `code`와 뜻:
 
 | code | 뜻 |
 |---|---|
 | `bad_config` | 설정 파일을 읽지 못했거나 값이 틀렸다 |
 | `bad_args` | 명령이나 인자가 맞지 않다 |
-| `cli_missing` | `claude` 명령을 찾지 못했다 |
+| `cli_missing` | `claude` 명령을 띄우지 못했다. 설치와 `claudeCommand`를 확인한다 |
 | `not_logged_in` | 구독(claude.ai) 로그인이 아니다 |
 | `interview_open` | 진행 중인 면접이 있다. `이어서`나 `끝` |
 | `no_interview` | 해당하는 면접이 없다 |
@@ -129,7 +129,7 @@ node "<스킬 폴더>/scripts/cli.mjs" doctor --call
 | `timeout` | 호출이 시간 상한을 넘었다. 같다 |
 | `other` | 그 밖의 오류. 같다 |
 
-엔진은 실패한 모델 호출을 스스로 다시 부르지 않는다. 다시 할지는 사용자가 정한다. 원래 오류 문장은 출력에 나오지 않는다. 면접이 끝난 뒤에 `hidden/errors.log`를 열어 본다.
+엔진은 실패한 모델 호출을 스스로 다시 부르지 않는다. 다시 할지는 사용자가 정한다. 원래 오류 문장은 출력에 나오지 않는다. 그 면접의 `hidden/errors.log`에, 면접이 생기기 전에 실패한 시작은 면접 폴더 뿌리의 `errors.log`에 쓰인다. 둘 다 면접 중에는 열지 않고, 면접이 끝난 뒤에 열어 본다.
 
 ## 개발
 

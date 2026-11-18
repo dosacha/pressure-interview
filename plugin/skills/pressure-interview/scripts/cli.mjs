@@ -2,6 +2,7 @@
 // 숨긴 값(의도, 가정, 정답지, 판정, 성향)과 원래 오류 문장은 어떤 출력에도 싣지 않는다. 원래 오류는 errors.log에만 쓴다.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,7 +10,7 @@ import { foldAssumptions, pendingTopics } from './lib/app/memory/memory-rules.mj
 import { configPath, DEFAULTS, loadConfig, saveConfig } from './lib/config.mjs';
 import { EngineError } from './lib/errors.mjs';
 import { createInterviewService } from './lib/interview.mjs';
-import { checkClaude, createLlm } from './lib/llm.mjs';
+import { checkClaude, claudeVersion, createLlm } from './lib/llm.mjs';
 import { sayClarify, sayQuestion } from './lib/render.mjs';
 import { createReviewService } from './lib/review.mjs';
 import { openStore } from './lib/store.mjs';
@@ -25,7 +26,8 @@ const NEXT = {
   docs: 'say와 문서 경로를 알려 준다.',
   partial: '사용자가 다시 하겠다고 하면 review를 실행한다. hidden 폴더와 errors.log를 읽지 않는다.',
   setup: "사용자에게 면접 폴더 경로를 묻고 setup --data-dir '<경로>'를 실행한 뒤, 처음 받은 명령을 다시 실행한다.",
-  statusOpen: '사용자가 이어서를 치면 resume을 실행한다.',
+  setupDone: '처음 받은 명령이 있었으면 그 명령을 다시 실행하고, 없었으면 사용자에게 면접 주제를 묻는다.',
+  statusOpen:'사용자가 이어서를 치면 resume을 실행한다.',
   statusNone: '사용자에게 면접 주제를 묻는다.',
   doctor: '결과를 알려 준다.',
 };
@@ -34,7 +36,7 @@ const NEXT = {
 const SAY = {
   bad_config: '설정 파일을 읽지 못했습니다. 설정 파일의 내용을 확인해 주세요.',
   bad_args: '명령이나 인자가 맞지 않습니다.',
-  cli_missing: 'claude 명령을 찾지 못했습니다. Claude Code가 설치돼 있는지 확인해 주세요.',
+  cli_missing: 'claude 명령을 찾지 못했습니다. Claude Code가 설치돼 있는지, 설정의 claudeCommand가 맞는지 확인해 주세요.',
   not_logged_in: 'claude가 구독(claude.ai) 계정으로 로그인돼 있지 않습니다. 로그인한 뒤 다시 해 주세요.',
   interview_open: '진행 중인 면접이 있습니다. 이어서 하거나 끝낸 뒤에 새로 시작할 수 있습니다.',
   no_interview: '해당하는 면접이 없습니다.',
@@ -231,6 +233,12 @@ const COMMANDS = {
   },
 
   async resume(env) {
+    // 마지막 답으로 끝난 뒤 출력을 못 받았을 수 있다. 복기 전이면 끝낼 때의 출력을 다시 준다. 모델을 부르지 않는다.
+    const latest = env.store.listInterviews()[0];
+    if (env.interviews.current() === null && latest?.status === 'finished' && !env.store.readSession(latest.id).reviewedAt) {
+      ctx.id = latest.id;
+      return turnOut(env.store, env.interviews.view(latest.id));
+    }
     return turnOut(env.store, await env.interviews.resume(openInterview(env)));
   },
 
@@ -307,11 +315,15 @@ const COMMANDS = {
 function setup(args) {
   const dir = flag(args, '--data-dir');
   if (!dir?.trim()) throw badArgs('--data-dir가 없다');
-  const dataDir = path.resolve(dir);
+  const expanded = /^~([\\/]|$)/.test(dir) ? path.join(os.homedir(), dir.slice(1)) : dir;
+  // 상대 경로는 진행자의 현재 폴더(대개 프로젝트 저장소)에 풀려 hidden이 저장소 안에 놓일 수 있다
+  if (!path.isAbsolute(expanded)) throw badArgs(`절대 경로가 아니다: ${dir}`);
+  const dataDir = path.resolve(expanded);
   fs.mkdirSync(dataDir, { recursive: true });
   const config = saveConfig({ dataDir });
   ctx.store = openStore(dataDir);
-  return statusOut(ctx.store, config);
+  const status = statusOut(ctx.store, config);
+  return { ...status, say: `면접 폴더: ${dataDir}\n\n${status.say}`, next: NEXT.setupDone };
 }
 
 // 설정과 claude를 점검한다. 점검의 실패도 결과로 알린다. 문장은 코드별 고정 문장이다.
@@ -333,8 +345,7 @@ async function doctor(args) {
   const effective = config ?? DEFAULTS;
   const check = async (label, fn) => {
     try {
-      await fn();
-      lines.push(`${label}: 통과`);
+      lines.push(`${label}: ${(await fn()) ?? '통과'}`);
     } catch (error) {
       try {
         ctx.store?.logError(null, `doctor ${label}`, error);
@@ -344,11 +355,12 @@ async function doctor(args) {
       lines.push(`${label}: ${SAY[error instanceof EngineError && SAY[error.code] ? error.code : 'other']}`);
     }
   };
+  await check('claude 버전', () => claudeVersion(effective));
   await check('claude 점검', () => checkClaude(effective));
   if (args.includes('--call')) {
-    await check('호출 시험(jobRole, 주제 Redis)', () =>
-      new TurnService(createLlm({ config: effective, record() {} }), effective).pickJobRole('Redis'),
-    );
+    await check('호출 시험(jobRole, 주제 Redis)', async () => {
+      await new TurnService(createLlm({ config: effective, record() {} }), effective).pickJobRole('Redis');
+    });
   }
   return { ok: true, kind: 'doctor', say: lines.join('\n'), next: NEXT.doctor };
 }

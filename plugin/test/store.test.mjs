@@ -133,6 +133,23 @@ test('오래된 잠금은 치우고 잡는다', () => {
   assert.equal(typeof store.acquireKeyLock(id, 1, 1000), 'function');
 });
 
+test('방금 만든 빈 잠금은 쓰는 중이므로 잡지 않는다', () => {
+  const { dir, store, id } = setup();
+  store.acquireKeyLock(id, 1, 60000);
+  fs.writeFileSync(lockPath(dir, id, 1), '');
+  assert.equal(store.acquireKeyLock(id, 1, 60000), null);
+  assert.ok(fs.existsSync(lockPath(dir, id, 1)));
+});
+
+test('오래된 빈 잠금은 치우고 잡는다', () => {
+  const { dir, store, id } = setup();
+  store.acquireKeyLock(id, 1, 60000);
+  fs.writeFileSync(lockPath(dir, id, 1), '');
+  const old = new Date(Date.now() - 3600000);
+  fs.utimesSync(lockPath(dir, id, 1), old, old);
+  assert.equal(typeof store.acquireKeyLock(id, 1, 60000), 'function');
+});
+
 test('푸는 함수는 남의 잠금을 지우지 않는다', () => {
   const { dir, store, id } = setup();
   const release = store.acquireKeyLock(id, 1, 60000);
@@ -146,7 +163,7 @@ test('답 파일: BOM과 CRLF를 고치고, 지우지 않는다', () => {
   const file = store.answerFile(id, 3, 1);
   assert.ok(file.endsWith('/answers/03-1.txt'));
   assert.ok(!file.includes('\\'));
-  fs.writeFileSync(file, '﻿가\r\n나');
+  fs.writeFileSync(file, '\uFEFF가\r\n나');
   assert.equal(store.readAnswerFile(file), '가\n나');
   assert.ok(fs.existsSync(file));
   store.removeAnswerFile(file);

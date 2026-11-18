@@ -15,6 +15,7 @@ const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const byCreated = (a, b) => a.createdAt - b.createdAt || cmp(a.id, b.id);
 
 /** 이 면접의 복기 결과로 memory.json을 다시 맞춘다. 여러 번 불러도 결과가 같다. */
+// shortcut: 엔진 프로세스 하나를 전제한다(한 사용자, 한 세션), 동시 실행이 생기면 memory.json에 잠금 파일을
 export function syncMemory(store, interviewId, at) {
   const session = store.readSession(interviewId);
   const records = store.readMemory();

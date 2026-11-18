@@ -32,7 +32,8 @@ function parseObject(text) {
 
 // 설계 11장: usage_limit(429)·refused·schema_failed의 실제 결과 모양은 아직 못 봤다. 가장 그럴듯한 필드로 정했다.
 export function classify({ spawnError, timedOut, exitCode = 0, stdout }) {
-  if (spawnError?.code === 'ENOENT') return { ok: false, code: 'cli_missing' };
+  // 띄우지 못하면 이유(ENOENT, 셸 없이 띄울 수 없는 .cmd의 EINVAL 등)를 가리지 않는다. checkClaude와 같다.
+  if (spawnError) return { ok: false, code: 'cli_missing' };
   if (timedOut) return { ok: false, code: 'timeout' };
   const result = parseObject(stdout);
   if (result === null) return { ok: false, code: 'other' };
@@ -49,24 +50,34 @@ function run(cmd, args, { input, env, timeoutMs }) {
   return new Promise((resolve) => {
     const out = [];
     const err = [];
-    let timedOut = false;
     let done = false;
-    const child = spawn(cmd[0], [...cmd.slice(1), ...args], { env, windowsHide: true });
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill();
-    }, timeoutMs);
+    let timer;
     const finish = (extra) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
       resolve({
-        timedOut,
+        timedOut: false,
         stdout: Buffer.concat(out).toString('utf8'),
         stderr: Buffer.concat(err).toString('utf8'),
         ...extra,
       });
     };
+    let child;
+    try {
+      child = spawn(cmd[0], [...cmd.slice(1), ...args], { env, windowsHide: true });
+    } catch (spawnError) {
+      // Node 24는 셸 없이 .cmd를 띄우면 EINVAL을 바로 던진다
+      finish({ spawnError });
+      return;
+    }
+    // 'close'를 기다리지 않는다. Windows에서는 손자 프로세스가 파이프를 쥐고 있으면 'close'가 오지 않는다.
+    timer = setTimeout(() => {
+      child.kill();
+      child.stdout.destroy();
+      child.stderr.destroy();
+      finish({ timedOut: true });
+    }, timeoutMs);
     child.stdout.on('data', (b) => out.push(b));
     child.stderr.on('data', (b) => err.push(b));
     child.on('error', (spawnError) => finish({ spawnError }));
@@ -112,6 +123,19 @@ export function createLlm({ config, record, env = process.env }) {
     return { data: verdict.result.structured_output, usage, model };
   }
   return { callJson };
+}
+
+// doctor용. 모델을 부르지 않는다. 첫 줄을 돌려준다.
+export async function claudeVersion(config, env = process.env) {
+  const res = await run(config.claudeCommand, ['--version'], {
+    env: childEnv(env, config.keepEnv),
+    timeoutMs: config.callTimeoutMs,
+  });
+  if (res.spawnError) throw new EngineError('cli_missing', res.spawnError.message);
+  if (res.timedOut) throw new EngineError('timeout', `${res.stdout}${res.stderr}`);
+  const line = res.stdout.split('\n').map((l) => l.trim()).find(Boolean);
+  if (res.exitCode !== 0 || !line) throw new EngineError('other', `${res.stdout}${res.stderr}`);
+  return line;
 }
 
 export async function checkClaude(config, env = process.env) {

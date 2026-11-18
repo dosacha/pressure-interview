@@ -4,10 +4,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
+import {
+  axisName, DEFECT_NAMES, QUESTION_INTENTS, REACTION_INTENTS, REACTION_TABLE, TEMPERAMENTS,
+} from '../skills/pressure-interview/scripts/lib/app/interview/catalog.mjs';
 import { analysis, answer, draft, key, makeWorld, push, replies, review, run, stock } from './helpers.mjs';
 
 const M = '@@HIDDEN@@';
-const SECRETS = [M, '집요형', '조력형', '흔드는형'];
+// 카탈로그 값이라 표식을 심을 수 없는 숨김 필드는 이 흐름에서 생기는 화면 이름으로 본다.
+const SECRETS = [
+  M, ...Object.values(TEMPERAMENTS),
+  QUESTION_INTENTS.A1,
+  ...Object.values(REACTION_TABLE.wrong).map((b) => REACTION_INTENTS[b]),
+  DEFECT_NAMES.wrong,
+  axisName('identity_swap'), axisName('durability'),
+];
 
 // 질문 문장과 되묻기 응답에는 심지 않는다. 그것은 화면에 나간다.
 const marked = () =>

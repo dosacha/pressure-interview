@@ -44,6 +44,7 @@ test('childEnv', () => {
 test('classify', () => {
   const code = (input) => classify({ exitCode: 0, ...input });
   assert.deepEqual(code({ spawnError: { code: 'ENOENT' } }), { ok: false, code: 'cli_missing' });
+  assert.deepEqual(code({ spawnError: { code: 'EINVAL' } }), { ok: false, code: 'cli_missing' });
   assert.deepEqual(code({ timedOut: true }), { ok: false, code: 'timeout' });
   assert.deepEqual(code({ stdout: 'not json' }), { ok: false, code: 'other' });
   assert.deepEqual(code({ stdout: '{"api_error_status":429,"is_error":true}' }), { ok: false, code: 'usage_limit' });

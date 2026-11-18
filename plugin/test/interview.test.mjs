@@ -136,6 +136,31 @@ test('답하면 분석하고 다음 질문을 만든다', async () => {
   assert.deepEqual(w.launched, [[id, 1], [id, 2]]);
 });
 
+test('세션을 쓰고 answer.json을 쓰기 전에 죽어도 다시 분석한 결과가 같다', async () => {
+  const told = analysis({ mentionedTechs: ['Sentinel'], unknownTechs: ['Raft'] });
+  const w = setup({ queues: { analyze: [told, told] } });
+  const id = await begin(w);
+  const write = w.store.writeAnswer;
+  let failed = false;
+  w.store.writeAnswer = (sid, seq, a) => {
+    if (!failed && a.analysis !== null) {
+      failed = true;
+      throw new Error('분석을 저장하기 전에 죽었다');
+    }
+    return write(sid, seq, a);
+  };
+  await assert.rejects(answer(w, id), /죽었다/);
+  assert.ok(w.store.readSession(id).unknownTechs.includes('Raft'), '세션은 먼저 쓰였어야 한다');
+  const v = await w.svc.resume(id);
+  assert.equal(v.turnCount, 2);
+  assert.equal(w.callsOf('analyze').length, 2);
+  const s = w.store.readSession(id);
+  assert.deepEqual(s.userMentioned, [...new Set(s.userMentioned)]);
+  assert.deepEqual(s.unknownTechs, [...new Set(s.unknownTechs)]);
+  assert.ok(s.userMentioned.includes('Sentinel'));
+  assert.deepEqual(s.unknownTechs, ['Raft']);
+});
+
 test('둘째 질문의 user 메시지에 기억과 말한 기술이 실린다', async () => {
   const w = setup({ queues: { analyze: [analysis({ mentionedTechs: ['Sentinel'] })] } });
   const at = new Date();

@@ -12,7 +12,8 @@ async function waitFor(cond, ms = 5000) {
   for (const end = Date.now() + ms; !cond() && Date.now() < end; ) await sleep(100);
   return cond();
 }
-const modelCalls = (w) => fakeCalls(w.fakeDir).filter((c) => c.kind !== 'auth');
+const modelCalls = (w) => fakeCalls(w.fakeDir).filter((c) => c.kind !== 'auth' && c.kind !== 'version');
+const CLI_MISSING = 'claude 명령을 찾지 못했습니다. Claude Code가 설치돼 있는지, 설정의 claudeCommand가 맞는지 확인해 주세요.';
 const turnFile = (w, id, seq, name) =>
   path.join(w.dataDir, 'interviews', id, 'hidden', 'turns', String(seq).padStart(2, '0'), name);
 const savedAnswer = (w, id, seq) => JSON.parse(fs.readFileSync(turnFile(w, id, seq, 'answer.json'), 'utf8')).answer;
@@ -44,9 +45,38 @@ test('setup 뒤 status', () => {
   const dir = path.join(w.home, '새 면접 폴더');
   const s = run(w, ['setup', '--data-dir', dir]);
   assert.equal(s.json.kind, 'status');
+  assert.ok(s.json.say.includes(dir), s.json.say);
+  assert.equal(s.json.next, '처음 받은 명령이 있었으면 그 명령을 다시 실행하고, 없었으면 사용자에게 면접 주제를 묻는다.');
   assert.ok(fs.existsSync(dir));
   assert.equal(run(w, ['status']).json.kind, 'status');
   fs.rmSync(dir, { recursive: true });
+  assert.equal(run(w, ['status']).json.kind, 'setup_needed');
+});
+
+test('setup은 앞의 ~를 홈으로 푼다', () => {
+  for (const arg of ['~', '~/면접 기록', '~\\면접 기록']) {
+    const w = world();
+    dropConfig(w);
+    // 자식의 홈을 임시 폴더로 돌린다. 실제 홈을 건드리지 않는다.
+    const homeWorld = { ...w, env: { ...w.env, USERPROFILE: w.home, HOME: w.home } };
+    const want = arg === '~' ? w.home : path.join(w.home, '면접 기록');
+    const s = run(homeWorld, ['setup', '--data-dir', arg]);
+    assert.equal(s.json.kind, 'status', arg);
+    assert.ok(s.json.say.includes(want), s.json.say);
+    assert.ok(fs.existsSync(want), arg);
+    assert.equal(fs.existsSync(path.resolve('~')), false);
+  }
+});
+
+test('setup은 상대 경로를 bad_args로 거절하고 아무것도 만들지 않는다', () => {
+  const w = world();
+  dropConfig(w);
+  const rel = 'pi 상대 경로 면접';
+  const r = run(w, ['setup', '--data-dir', rel]);
+  assert.equal(r.status, 1);
+  assert.equal(r.stderr, '');
+  assert.equal(r.json.code, 'bad_args');
+  assert.equal(fs.existsSync(path.resolve(rel)), false);
   assert.equal(run(w, ['status']).json.kind, 'setup_needed');
 });
 
@@ -133,6 +163,21 @@ test('한 판: 질문 둘, 끝, 복기, 고침, 표시, 추이', () => {
     .filter(Boolean)
     .map((l) => JSON.parse(l));
   assert.equal(rows.filter((r) => r.type === undefined).length, modelCalls(w).length);
+});
+
+test('끝난 뒤 복기 전의 resume은 끝낼 때의 출력을 다시 준다', () => {
+  const w = world({ questionLimit: 2 });
+  const s = start(w);
+  const done = answer(w, answer(w, s.json, '첫 답').json, '마지막 답');
+  assert.equal(done.json.kind, 'finished');
+  const before = fakeCalls(w.fakeDir).length;
+  const r = run(w, ['resume']);
+  assert.equal(r.status, 0);
+  assert.equal(r.stderr, '');
+  assert.deepEqual(r.json, done.json);
+  assert.equal(fakeCalls(w.fakeDir).length, before);
+  assert.equal(run(w, ['review']).json.kind, 'review_ready');
+  assert.equal(run(w, ['resume']).json.code, 'no_interview');
 });
 
 test('진행 중이면 interview_open, 끝난 면접이 없으면 not_finished, 면접이 없으면 no_interview', () => {
@@ -247,14 +292,30 @@ test('안에서 난 오류도 코드만 낸다', async () => {
   assert.ok(log.includes('    at '));
 });
 
+test('셸 없이 띄울 수 없는 .cmd는 cli_missing', { skip: process.platform !== 'win32' }, () => {
+  const probe = makeWorld();
+  const cmd = path.join(probe.fakeDir, 'claude.cmd');
+  fs.writeFileSync(cmd, '@echo off\r\n');
+  const w = world({ claudeCommand: [cmd] });
+  const r = start(w);
+  assert.equal(r.status, 1);
+  assert.equal(r.stderr, '');
+  assert.equal(r.json.code, 'cli_missing');
+  const d = run(w, ['doctor']);
+  assert.equal(d.json.kind, 'doctor');
+  assert.equal(d.stderr, '');
+  assert.ok(d.json.say.includes(`claude 점검: ${CLI_MISSING}`), d.json.say);
+  assert.ok(d.json.say.includes(`claude 버전: ${CLI_MISSING}`), d.json.say);
+});
+
 test('doctor', () => {
   const w = world();
   const r = run(w, ['doctor']);
   assert.equal(r.status, 0);
   assert.equal(r.json.kind, 'doctor');
-  const calls = fakeCalls(w.fakeDir);
-  assert.ok(calls.length > 0);
-  assert.ok(calls.every((c) => c.kind === 'auth'));
+  assert.ok(r.json.say.includes('claude 버전: 0.0.0-fake'), r.json.say);
+  assert.ok(r.json.say.includes('claude 점검: 통과'), r.json.say);
+  assert.deepEqual(fakeCalls(w.fakeDir).map((c) => c.kind).sort(), ['auth', 'version']);
   assert.equal(run(w, ['doctor', '--call']).json.kind, 'doctor');
   assert.deepEqual(modelCalls(w).map((c) => c.kind), ['jobRole']);
 });

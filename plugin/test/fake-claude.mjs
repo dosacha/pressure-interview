@@ -14,6 +14,12 @@ const KINDS = [
   ['questionIntent', 'question'], ['mentionedTechs', 'analyze'],
 ];
 
+if (args.includes('--version')) {
+  log({ kind: 'version' });
+  process.stdout.write('0.0.0-fake\n');
+  process.exit(0);
+}
+
 if (args.includes('auth')) {
   log({ kind: 'auth' });
   const file = path.join(dir, 'auth.json');
