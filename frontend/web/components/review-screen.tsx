@@ -16,6 +16,7 @@ const REACTION_VERDICT = {
   valid_point: '맞는 지적',
   misjudgment: '오판',
   intended_test: '의도된 확신 시험',
+  deepening: '더 깊이 물음',
 } as const;
 const RESULTS: AssumptionResult[] = ['well', 'wobbly', 'wrong'];
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

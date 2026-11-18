@@ -53,6 +53,7 @@ describe('review.call', () => {
       'valid_point',
       'misjudgment',
       'intended_test',
+      'deepening',
     ];
     const results: (AssumptionResult | 'none')[] = ['well', 'wobbly', 'wrong', 'none'];
     const p = schema.properties;
@@ -89,6 +90,18 @@ describe('review.call', () => {
   it('가정 없는 질문이면 result를 none으로 두라고 알린다', () => {
     const { system } = buildReviewPrompt(input);
     expect(system).toContain('가정을 바꾸지 않은 질문이면 result를 none으로 둔다');
+  });
+  it('더 깊이 물은 질문을 가르는 분류와 그 까닭을 말한다', () => {
+    const { system } = buildReviewPrompt(input);
+    for (const s of [
+      '- deepening: 답에 실제 결함이 없었고, 면접관도 답을 틀렸다고 보지 않은 채 난이도나 범위를 올려 더 물었거나 답이 다루지 않은 부분으로 넘어간 것이다.',
+      '이면 deepening이 아니라 intended_test다.',
+      'valid_point로 적으면 지원자가 맞는 답에 결함이 있었다고 오해한다.',
+      '어느 것이 답이 맞아 더 물은 것이며,',
+    ])
+      expect(system).toContain(s);
+    expect(system.indexOf('- intended_test:')).toBeLessThan(system.indexOf('- deepening:'));
+    expect(system.indexOf('- deepening:')).toBeLessThan(system.indexOf('- valid_point:'));
   });
   it('같은 축의 가정을 key와 함께 싣는다', () => {
     const { user } = buildReviewPrompt(input);

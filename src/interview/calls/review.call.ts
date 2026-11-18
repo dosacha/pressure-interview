@@ -54,9 +54,9 @@ export const REVIEW_SCHEMA = {
           index: { type: 'integer', description: '이 답에서 나온 질문의 순서(0부터)' },
           verdict: {
             type: 'string',
-            enum: ['valid_point', 'misjudgment', 'intended_test'],
+            enum: ['valid_point', 'misjudgment', 'intended_test', 'deepening'],
             description:
-              '실제 결함을 짚었으면 valid_point, 오판이면 misjudgment, 일부러 흔든 것이면 intended_test',
+              '실제 결함을 짚었으면 valid_point, 오판이면 misjudgment, 일부러 흔든 것이면 intended_test, 결함이 없어 더 깊이 물은 것이면 deepening',
           },
           note: note('그렇게 본 까닭'),
         },
@@ -112,10 +112,11 @@ aimed는 답이 질문 의도가 확인하려던 것을 향했으면 true다. �
 이 답에서 나온 질문마다 하나씩 가른다. index는 user 메시지에 적은 그 질문의 번호(0부터)다. 덧붙이는 질문은 다른 면접관이 같은 답에 얹은 질문이라 함께 가른다.
 
 - intended_test: 반응 의도가 B8 ${REACTION_INTENTS.B8}이고, 답이 맞았는데도 의심을 던진 것이다. 일부러 흔든 것이라 오판이 아니다.
-- valid_point: 답의 실제 결함을 짚은 반응이다.
+- deepening: 답에 실제 결함이 없었고, 면접관도 답을 틀렸다고 보지 않은 채 난이도나 범위를 올려 더 물었거나 답이 다루지 않은 부분으로 넘어간 것이다. 근거로 삼은 결함이 none ${DEFECT_NAMES.none}이고 그 판정이 맞을 때가 여기에 든다. 반응 의도가 B8 ${REACTION_INTENTS.B8}이면 deepening이 아니라 intended_test다. 더 깊이 묻는 질문도 지원자에게는 압박으로 느껴지므로, 이것을 valid_point로 적으면 지원자가 맞는 답에 결함이 있었다고 오해한다.
+- valid_point: 답의 실제 결함을 짚은 반응이다. 근거로 삼은 결함이 none ${DEFECT_NAMES.none}이었더라도, 답에 실제로 결함이 있었고 질문이 그것을 짚었으면 여기에 든다.
 - misjudgment: 답이 맞았는데 틀렸다고 보고 반응한 것이다.
 
-압박 질문을 받은 지원자는 자기 답이 틀렸다고 여기기 쉽다. 어느 반응이 실제 결함을 짚었고 어느 것이 일부러 흔든 것이거나 오판이었는지 가려 주어야 지원자가 맞는 답을 버리지 않는다. 이 답에서 나온 질문이 없으면 빈 배열로 둔다.
+압박 질문을 받은 지원자는 자기 답이 틀렸다고 여기기 쉽다. 어느 반응이 실제 결함을 짚었고, 어느 것이 답이 맞아 더 물은 것이며, 어느 것이 일부러 흔든 것이거나 오판이었는지 가려 주어야 지원자가 맞는 답을 버리지 않는다. 이 답에서 나온 질문이 없으면 빈 배열로 둔다.
 
 ## assumption
 

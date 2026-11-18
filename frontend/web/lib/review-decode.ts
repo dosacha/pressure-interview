@@ -17,7 +17,7 @@ export interface TurnReview {
   defects: { index: number; verdict: 'valid' | 'misjudged'; note: string }[];
   reactions: {
     index: number;
-    verdict: 'valid_point' | 'misjudgment' | 'intended_test';
+    verdict: 'valid_point' | 'misjudgment' | 'intended_test' | 'deepening';
     note: string;
   }[];
   assumption: {
@@ -134,7 +134,7 @@ function decodeReview(v: unknown): TurnReview {
         index: num(r.index, 'review.reaction.index'),
         verdict: oneOf(
           r.verdict,
-          ['valid_point', 'misjudgment', 'intended_test'] as const,
+          ['valid_point', 'misjudgment', 'intended_test', 'deepening'] as const,
           'review.reaction.verdict',
         ),
         note: str(r.note, 'review.reaction.note'),

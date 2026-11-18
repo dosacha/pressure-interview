@@ -88,6 +88,15 @@ void test('verdict가 목록 밖이면 던진다', () => {
   );
 });
 
+void test('이 답에서 나온 질문의 판정 deepening을 읽는다', () => {
+  const reactions = [{ index: 0, verdict: 'deepening', note: '더 물음' }];
+  const decoded = decodeReviewView({
+    ...view,
+    turns: [{ ...turn, review: { ...turn.review, reactions } }],
+  });
+  assert.equal(decoded.turns[0].review?.reactions[0].verdict, 'deepening');
+});
+
 void test('review가 null인 턴도 받는다', () => {
   const pending = {
     ...view,

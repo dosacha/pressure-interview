@@ -58,7 +58,7 @@ async function main(): Promise<void> {
     });
     // 복기 화면에서 판정이 모두 보이도록 돌려 가며 준다. 결함과 질문의 index는 프롬프트에 적힌 번호 안에서 고른다.
     const DEFECT_VERDICTS = ['valid', 'misjudged'] as const;
-    const REACTION_VERDICTS = ['valid_point', 'misjudgment', 'intended_test'] as const;
+    const REACTION_VERDICTS = ['valid_point', 'misjudgment', 'intended_test', 'deepening'] as const;
     const RESULTS = ['well', 'wobbly', 'wrong'] as const;
     let d = 0;
     let r = 0;

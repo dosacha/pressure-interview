@@ -182,7 +182,7 @@ export interface TurnReview {
   // 이 답에서 나온 질문 하나하나. index는 ReviewInput.followUps의 순서
   reactions: {
     index: number;
-    verdict: 'valid_point' | 'misjudgment' | 'intended_test';
+    verdict: 'valid_point' | 'misjudgment' | 'intended_test' | 'deepening';
     note: string;
   }[];
   // userResult는 사용자가 복기에서 고친 결과다. 모델은 채우지 않는다
