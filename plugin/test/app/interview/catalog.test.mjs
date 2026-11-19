@@ -1,4 +1,4 @@
-// 생성된 파일이다. 손으로 고치지 않는다. 원본: src/interview/catalog.spec.ts @ aeae0dd, 도구: tools/port-app-src.mjs
+// 서버판 src/interview/catalog.spec.ts @ aeae0dd에서 옮겨 와 스킬이 고쳐 쓴다.
 import { describe, it, expect, jest } from '../../jest-shim.mjs';
 import { AXES, SHARED_AXES, OWNABLE_AXES, ROLES, DEFECT_PRIORITY, QUESTION_INTENTS, REACTION_INTENTS, INTENT_GROUPS } from '../../../skills/pressure-interview/scripts/lib/app/interview/catalog.mjs';
 

@@ -308,14 +308,14 @@ plugin/skills/pressure-interview/
   SKILL.md              진행자의 규칙
   scripts/cli.mjs       엔진 명령
   scripts/lib/          설정, 저장, claude 실행기, 면접 진행, 복기
-  scripts/lib/app/      서버판에서 옮겨 온 규칙과 프롬프트 (생성된 파일)
+  scripts/lib/app/      서버판에서 옮겨 와 스킬이 고쳐 쓰는 규칙과 프롬프트
 plugin/test/            node:test
 src/, frontend/         서버판
 tools/                  옮기는 도구들
 docs/                   설계, 계획, 실제로 돌려 본 기록
 ```
 
-`scripts/lib/app/`의 규칙과 프롬프트는 서버판 소스에서 타입만 걷어 내고 옮긴 생성 파일이다. 손으로 고치지 말고, 서버판 소스를 고친 뒤 `tools/port-app-src.mjs`로 다시 만든다. 도구는 정해 둔 커밋(지금은 `aeae0dd`)에서 소스를 읽는다. 이 커밋은 `main`의 `src/`보다 한 걸음 앞서 있다(스스로 꺼내며 모른다고 한 기술도 다시 묻지 않는 변경). `node --no-warnings tools/port-app-src.mjs --check`는 옮긴 파일이 그 커밋에서 다시 만든 것과 같은지 본다. 그 커밋이 없는 클론에서는 이 검사를 돌릴 수 없고, 이 검사를 하는 테스트는 건너뛴다.
+`scripts/lib/app/`의 규칙과 프롬프트는 서버판(`aeae0dd`)에서 옮겨 왔고 이제 스킬이 직접 고친다. 서버판은 더 고치지 않는다.
 
 ## 기록
 

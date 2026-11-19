@@ -1,4 +1,4 @@
-// 생성된 파일이다. 손으로 고치지 않는다. 원본: src/review/review.view.ts @ aeae0dd, 도구: tools/port-app-src.mjs
+// 서버판 src/review/review.view.ts @ aeae0dd에서 옮겨 와 스킬이 고쳐 쓴다.
 import { axisName, DEFECT_NAMES, INTENT_GROUPS, QUESTION_INTENTS, REACTION_INTENTS, ROLES, TEMPERAMENTS } from '../interview/catalog.mjs';
              
             

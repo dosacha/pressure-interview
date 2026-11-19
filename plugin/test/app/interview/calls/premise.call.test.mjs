@@ -1,4 +1,4 @@
-// 생성된 파일이다. 손으로 고치지 않는다. 원본: src/interview/calls/premise.call.spec.ts @ aeae0dd, 도구: tools/port-app-src.mjs
+// 서버판 src/interview/calls/premise.call.spec.ts @ aeae0dd에서 옮겨 와 스킬이 고쳐 쓴다.
 import { describe, it, expect, jest } from '../../../jest-shim.mjs';
 
 import { PREMISE_SCHEMA, checkPremise } from '../../../../skills/pressure-interview/scripts/lib/app/interview/calls/premise.call.mjs';

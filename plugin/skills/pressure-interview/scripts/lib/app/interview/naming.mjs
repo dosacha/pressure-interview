@@ -1,4 +1,4 @@
-// 생성된 파일이다. 손으로 고치지 않는다. 원본: src/interview/naming.ts @ aeae0dd, 도구: tools/port-app-src.mjs
+// 서버판 src/interview/naming.ts @ aeae0dd에서 옮겨 와 스킬이 고쳐 쓴다.
                                                          
 
 // shortcut: 대소문자·공백만 맞춘다. 한글 표기("카프카")·별칭("Postgres")은 못 잡음, R1에서 놓친 사례가 나오면 별칭 표 추가

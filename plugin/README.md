@@ -141,5 +141,4 @@ node --test "plugin/test/**/*.test.mjs"     # 저장소 뿌리에서
 ```
 
 - 테스트는 실제 모델을 부르지 않는다. 가짜 `claude`(`plugin/test/fake-claude.mjs`)와 임시 폴더만 쓴다.
-- `scripts/lib/app/`와 `plugin/test/app/`은 앱의 소스를 옮겨 만든 파일이다. 손으로 고치지 않는다. 바꿀 일이 있으면 `tools/port-app-src.mjs`를 고쳐 다시 만든다.
-- 옮긴 기준 커밋은 `aeae0dd`다.
+- `scripts/lib/app/`와 `plugin/test/app/`의 규칙과 프롬프트는 서버판(`aeae0dd`)에서 옮겨 왔고 이제 스킬이 직접 고친다. 서버판은 더 고치지 않는다.

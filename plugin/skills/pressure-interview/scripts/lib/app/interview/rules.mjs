@@ -1,4 +1,4 @@
-// 생성된 파일이다. 손으로 고치지 않는다. 원본: src/interview/rules.ts @ aeae0dd, 도구: tools/port-app-src.mjs
+// 서버판 src/interview/rules.ts @ aeae0dd에서 옮겨 와 스킬이 고쳐 쓴다.
 import { DEFECT_PRIORITY, REACTION_TABLE, ROLES } from './catalog.mjs';
                                                                      
 

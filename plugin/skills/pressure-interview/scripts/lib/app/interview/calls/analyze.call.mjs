@@ -1,4 +1,4 @@
-// 생성된 파일이다. 손으로 고치지 않는다. 원본: src/interview/calls/analyze.call.ts @ aeae0dd, 도구: tools/port-app-src.mjs
+// 서버판 src/interview/calls/analyze.call.ts @ aeae0dd에서 옮겨 와 스킬이 고쳐 쓴다.
 import { axisName, DEFECT_NAMES, DEFECT_PRIORITY, DEFECT_TYPES, OWNABLE_AXES, QUESTION_INTENTS } from '../catalog.mjs';
                                                   
                                                                
