@@ -24,7 +24,7 @@ test('명령표가 cli의 명령과 맞는다', () => {
 });
 
 test('SKILL.md가 confirm_replace와 cap을 말한다', () => {
-  for (const word of ['confirm_replace', 'cap', 'review_ready']) assert.ok(skill.includes(word), word);
+  for (const word of ['`confirm_replace`', '`cap`', 'review_ready']) assert.ok(skill.includes(word), word);
 });
 
 test('README가 밝힐 것을 밝힌다', () => {
@@ -47,5 +47,13 @@ test('옮겨 온 파일은 손으로 고치는 파일이라고 밝힌다', () =>
 test('README들이 옮기는 도구를 말하지 않는다', () => {
   for (const f of ['README.md', 'plugin/README.md']) {
     assert.doesNotMatch(fs.readFileSync(f, 'utf8'), /port-app-src/, f);
+  }
+});
+
+test('README들이 질문 6개를 말하지 않고 끝내기를 말한다', () => {
+  for (const f of ['README.md', 'plugin/README.md']) {
+    const text = fs.readFileSync(f, 'utf8');
+    for (const word of ['질문 6개', 'questionLimit']) assert.ok(!text.includes(word), `${f}: ${word}`);
+    for (const word of ["'끝'", '볼 만큼 봤다', 'questionCap']) assert.ok(text.includes(word), `${f}: ${word}`);
   }
 });
