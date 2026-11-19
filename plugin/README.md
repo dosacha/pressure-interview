@@ -101,7 +101,7 @@ ln -s "<저장소>/plugin/skills/pressure-interview" ~/.claude/skills/pressure-i
 | 항목 | 기본값 | 뜻 |
 |---|---|---|
 | `dataDir` | 없음 | 면접 기록을 두는 폴더. `setup --data-dir`가 정한다. 절대 경로나 `~`로 시작하는 경로만 받는다 |
-| `questionCap` | 30 | 안전장치. 질문이 이 수에 닿으면 이어 할지 묻는다. `계속`이면 이 수만큼 늘려 이어 간다. 1 이상의 정수 |
+| `questionCap` | 30 | 안전장치. 질문이 이 수에 닿으면 이어 할지 묻는다. `계속`이면 30개씩(고정) 늘려 이어 간다. 1 이상의 정수 |
 | `maxConsecutive` | 2 | 같은 면접관이 이어서 물을 수 있는 횟수 |
 | `maxRegenerations` | 1 | 질문을 다시 만드는 횟수 |
 | `reissueAfterHours` | 24 | 다시 연습할 가정을 다시 내기까지 기다리는 시간(시간 단위) |
