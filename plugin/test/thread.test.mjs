@@ -15,12 +15,13 @@ import {
 const NO_DEFECT = [{ type: 'none', axis: 'none', note: '' }];
 const WRONG = [{ type: 'wrong', axis: 'durability', note: '틀림' }];
 
-function turn(seq, { thread, score = null, signals = [], defects = NO_DEFECT, kind = 'answer', unknownTechs = [], analyzed = true }) {
+function turn(seq, { thread, score = null, signals = [], defects = NO_DEFECT, kind = 'answer', unknownTechs = [], analyzed = true, askedUnknown }) {
   return {
     seq,
     thread,
     question: { text: `질문 ${seq}` },
     analysis: analyzed ? { kind, score, signals, defects, unknownTechs } : null,
+    ...(askedUnknown && { askedUnknown }),
   };
 }
 const open = (seq, no, areaId, opts = {}) => turn(seq, { thread: { no, role: 'open', areaId, followKind: null }, ...opts });
@@ -141,6 +142,24 @@ test('threadScore: 전제 모름은 null', () => {
   assert.equal(threadScore(t), null);
 });
 
+test('threadsOf: 거른 모름(askedUnknown)이 비면 이미 말한 기술의 모름은 전제 모름이 아니다', () => {
+  // turn.service가 이미 말한 Redis를 걸러 askedUnknown이 비었다
+  const [t] = threadsOf([open(1, 1, 'a1', { score: 'solid', unknownTechs: ['Redis'], askedUnknown: [] })]);
+  assert.equal(t.unknownPremise, false);
+  assert.equal(t.followKind, 'deepen');
+  assert.equal(t.closed, false);
+  assert.equal(t.score, 'solid');
+  const [u] = threadsOf([open(1, 1, 'a1', { score: 'solid', unknownTechs: ['Redis'], askedUnknown: ['Raft'] })]);
+  assert.equal(u.unknownPremise, true);
+  assert.equal(u.closed, true);
+});
+
+test('threadsOf: 심화 꼬리질문 답이 unclear여도 깊이 한계', () => {
+  const [t] = threadsOf([open(1, 1, 'a1', { score: 'solid' }), follow(2, 1, 'a1', 'deepen', { score: 'unclear' })]);
+  assert.equal(t.depthLimit, true);
+  assert.equal(t.score, 'solid');
+});
+
 test('areaStatus: 전제 모름 한 번은 안 물은 것, 두 번이면 물은 것', () => {
   const unknown = (seq, no) => open(seq, no, 'a1', { unknownTechs: ['Raft'] });
   const once = areaStatus(MAP, threadsOf([unknown(1, 1), open(2, 2, 'a2', { score: 'mostly' })]));
@@ -190,6 +209,35 @@ test('checkJudgment enough: 비율 계산에서 점수 없는 줄기를 뺀다',
   assert.equal(r.decision, 'enough');
 });
 
+test('checkJudgment enough: solid가 절반 이상이어도 mostly 이상이 80% 미만이면 knows 실패', () => {
+  // mostly 이상 3/5, solid 3/5
+  const scores = ['solid', 'solid', 'solid', 'unclear', 'wrong'];
+  const turns = ['a1', 'a2', 'a3', 'a4', 'a5'].map((a, i) =>
+    open(i + 1, i + 1, a, { score: scores[i], signals: i < 2 ? [sig('practical')] : i === 2 ? [sig('reasoning')] : [] }),
+  );
+  // solid는 심화 꼬리질문이 있어야 닫힌다
+  const all = [...turns, ...[1, 2, 3].map((no) => follow(10 + no, no, `a${no}`, 'deepen', { score: 'solid' }))];
+  const r = checkJudgment({
+    judgment: enoughJudgment({ knows: [1, 2, 3], applies: [1, 2], learns: [3] }),
+    topicMap: MAP,
+    threads: threadsOf(all),
+  });
+  assert.deepEqual(r.failed, ['knows']);
+});
+
+test('checkJudgment enough: 핵심을 다 묻지 않았으면 knows 실패', () => {
+  const turns = enoughTurns().filter((t) => t.thread.areaId !== 'a5');
+  const r = checkJudgment({ judgment: enoughJudgment(), topicMap: MAP, threads: threadsOf(turns) });
+  assert.deepEqual(r, { decision: 'continue', nextAreaId: 'a5', failed: ['knows'] });
+});
+
+test('checkJudgment enough: 근거가 맞아도 practical 줄기가 하나뿐이면 applies 실패', () => {
+  const turns = enoughTurns();
+  turns[4] = open(5, 3, 'a3', { score: 'solid' });
+  const r = checkJudgment({ judgment: enoughJudgment({ applies: [1] }), topicMap: MAP, threads: threadsOf(turns) });
+  assert.deepEqual(r.failed, ['applies']);
+});
+
 const settledJudgment = { decision: 'settled', evidence: { knows: [], applies: [], learns: [] }, candidates: [], nextArea: '' };
 
 test('checkJudgment settled: 핵심을 다 돌기 전이면 continue, failed에 coreCovered', () => {
@@ -208,6 +256,25 @@ test('checkJudgment settled: wrong 절반 이상이어도 reasoning이 있으면
   const r = checkJudgment({ judgment: settledJudgment, topicMap: MAP, threads: threadsOf(turns) });
   assert.equal(r.decision, 'continue');
   assert.deepEqual(r.failed, ['noLearning']);
+});
+
+test('checkJudgment settled: wrong 2/4는 통과, 2/5는 wrongRatio 실패', () => {
+  const MAP4 = { areas: MAP.areas.filter((a) => a.id !== 'a5') };
+  const four = ['a1', 'a2', 'a3', 'a4'].map((a, i) => open(i + 1, i + 1, a, { score: i < 2 ? 'wrong' : 'mostly' }));
+  assert.equal(checkJudgment({ judgment: settledJudgment, topicMap: MAP4, threads: threadsOf(four) }).decision, 'settled');
+  const five = ['a1', 'a2', 'a3', 'a4', 'a5'].map((a, i) => open(i + 1, i + 1, a, { score: i < 2 ? 'wrong' : 'mostly' }));
+  assert.deepEqual(checkJudgment({ judgment: settledJudgment, topicMap: MAP, threads: threadsOf(five) }).failed, ['wrongRatio']);
+});
+
+test('checkJudgment exhausted: 핵심을 다 묻지 않았으면 coreCovered 실패', () => {
+  const threads = threadsOf(['a1', 'a2'].map((a, i) => open(i + 1, i + 1, a, { score: 'mostly' })));
+  const cand = (verdict) => ({ question: '후보', verdict, why: '까닭' });
+  const r = checkJudgment({
+    judgment: { decision: 'exhausted', evidence: { knows: [], applies: [], learns: [] }, candidates: [cand('repeat'), cand('contrived'), cand('offTopic')], nextArea: '' },
+    topicMap: MAP,
+    threads,
+  });
+  assert.deepEqual(r, { decision: 'continue', nextAreaId: 'a3', failed: ['coreCovered'] });
 });
 
 test('checkJudgment exhausted: 후보가 둘이면 continue, failed에 candidates', () => {
@@ -247,6 +314,17 @@ test('pickNextArea: 전제 모름으로 두 번 닫힌 영역을 주면 다른 �
   assert.equal(pickNextArea({ wanted: 'a2', topicMap: MAP, threads }), 'a3');
   // 한 번이면 다시 열 수 있다
   assert.equal(pickNextArea({ wanted: 'a2', topicMap: MAP, threads: threads.slice(0, 2) }), 'a2');
+});
+
+test('pickNextArea: 모두 물었으면 전제 모름으로 두 번 닫힌 영역은 건너뛴다. 프로토타입 이름은 지도에 없는 id다', () => {
+  const unknown = (seq, no) => open(seq, no, 'a1', { unknownTechs: ['Raft'] });
+  const threads = threadsOf([
+    unknown(1, 1),
+    unknown(2, 2),
+    ...MAP.areas.slice(1).map((a, i) => open(i + 3, i + 3, a.id, { score: 'mostly' })),
+  ]);
+  assert.equal(pickNextArea({ wanted: null, topicMap: MAP, threads }), 'a2');
+  assert.equal(pickNextArea({ wanted: 'toString', topicMap: MAP, threads: [] }), 'a1');
 });
 
 test('pickOpenerFor: 축을 맡은 사람, 연속 상한이면 다른 사람, 맡은 사람이 없으면 가장 오래 쉰 사람', () => {

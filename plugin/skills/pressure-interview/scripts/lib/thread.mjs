@@ -44,7 +44,8 @@ export function threadsOf(turns) {
     .map(([no, { open, follow }]) => {
       const oa = analyzed(open);
       const fa = analyzed(follow);
-      const unknownPremise = Boolean(oa?.unknownTechs?.length);
+      // turn.service가 이미 말한 기술을 거른 목록. 그 목록이 없는 턴만 분석의 원래 목록을 쓴다.
+      const unknownPremise = Boolean(oa && (open.askedUnknown ?? oa.unknownTechs)?.length);
       const planned = oa ? followUpKind({ score: oa.score, defects: oa.defects ?? [], askedUnknown: unknownPremise }) : null;
       const followKind = follow ? follow.thread.followKind : planned;
       const followScore = fa?.score ?? null;
@@ -87,9 +88,10 @@ export function areaStatus(topicMap, threads) {
 export function pickNextArea({ wanted, topicMap, threads }) {
   const status = areaStatus(topicMap, threads);
   const { areas } = topicMap;
-  if (status[wanted] && status[wanted].unknownCount < THRESHOLDS.UNKNOWN_REOPEN_LIMIT) return wanted;
+  const open = (id) => status[id].unknownCount < THRESHOLDS.UNKNOWN_REOPEN_LIMIT;
+  if (Object.hasOwn(status, wanted) && open(wanted)) return wanted;
   const unasked = areas.filter((a) => !status[a.id].asked);
-  return (unasked.find((a) => a.core) ?? unasked[0] ?? areas[0]).id;
+  return (unasked.find((a) => a.core) ?? unasked[0] ?? areas.find((a) => open(a.id)) ?? areas[0]).id;
 }
 
 const ratio = (n, d) => (d === 0 ? 0 : n / d);
