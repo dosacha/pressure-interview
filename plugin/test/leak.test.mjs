@@ -7,7 +7,7 @@ import test from 'node:test';
 import {
   axisName, DEFECT_NAMES, QUESTION_INTENTS, REACTION_INTENTS, REACTION_TABLE, TEMPERAMENTS,
 } from '../skills/pressure-interview/scripts/lib/app/interview/catalog.mjs';
-import { analysis, answer, draft, judgment, key, makeWorld, push, replies, review, run, stock, topicMap } from './helpers.mjs';
+import { analysis, answer, fakeCalls, draft, judgment, key, makeWorld, push, replies, review, run, stock, topicMap } from './helpers.mjs';
 
 const M = '@@HIDDEN@@';
 // 카탈로그 값이라 표식을 심을 수 없는 숨김 필드는 이 흐름에서 생기는 화면 이름으로 본다.
@@ -60,6 +60,8 @@ const errorsLog = (w, id) => {
 test('면접이 끝나기 전의 어떤 출력에도 표식이 없다', () => {
   const w = makeWorld();
   push(w.fakeDir, 'analyze', { data: analysis({ kind: 'clarify' }) });
+  // 결함 없는 답이라 줄기가 닫히고 끝내기 판정이 돈다.
+  push(w.fakeDir, 'analyze', { data: analysis({ score: 'mostly', defects: [], signals: [{ type: 'practical', quote: M }] }) });
   stock(w.fakeDir, marked());
   clean(run(w, ['status']), 'status');
   const s = clean(run(w, ['start', '--topic', 'Redis']), 'start');
@@ -67,6 +69,7 @@ test('면접이 끝나기 전의 어떤 출력에도 표식이 없다', () => {
   assert.equal(c.json.kind, 'clarify');
   const q = clean(answer(w, c.json, '답입니다.'), 'answer');
   assert.equal(q.json.kind, 'question');
+  assert.ok(fakeCalls(w.fakeDir).some((c) => c.kind === 'endJudge'), '끝내기 판정이 돌지 않았다');
   clean(run(w, ['resume']), 'resume');
   assert.equal(clean(run(w, ['start', '--topic', 'Kafka']), 'start(진행 중)').json.kind, 'confirm_replace');
   clean(run(w, ['status']), 'status');
@@ -74,6 +77,17 @@ test('면접이 끝나기 전의 어떤 출력에도 표식이 없다', () => {
     assert.equal(clean(run(w, args), args[0]).json.code, 'not_finished');
   }
   clean(run(w, ['stats']), 'stats');
+});
+
+test('상한에 닿은 cap 출력에도 표식이 없다', () => {
+  const w = makeWorld({ questionCap: 1 });
+  push(w.fakeDir, 'analyze', { data: analysis({ score: 'mostly', defects: [], signals: [{ type: 'practical', quote: M }] }) });
+  stock(w.fakeDir, marked());
+  const s = clean(run(w, ['start', '--topic', 'Redis']), 'start');
+  const cap = clean(answer(w, s.json, '답입니다.'), 'answer(cap)');
+  assert.equal(cap.json.kind, 'cap', cap.stdout);
+  assert.ok(fakeCalls(w.fakeDir).some((c) => c.kind === 'endJudge'), '끝내기 판정이 돌지 않았다');
+  clean(run(w, ['resume']), 'resume(cap)');
 });
 
 test('실패할 때도 표식이 없다', () => {

@@ -303,6 +303,37 @@ test('판정이 enough이고 조건이 맞으면 끝나고 end.by는 claude', as
   assert.equal(w.svc.current(), null);
 });
 
+test('핵심 영역을 다 물은 뒤 후보 셋이 모두 막히면 exhausted로 끝나고 end.by는 claude', async () => {
+  const candidates = [
+    { question: '후보-가', verdict: 'repeat', why: '까닭-가' },
+    { question: '후보-나', verdict: 'contrived', why: '까닭-나' },
+    { question: '후보-다', verdict: 'offTopic', why: '까닭-다' },
+  ];
+  const exhausted = judgment({ decision: 'exhausted', candidates, nextArea: '', direction: '' });
+  const w = setup({ queues: { endJudge: [judgment(), exhausted] } });
+  const id = await begin(w);
+  await answer(w, id);
+  const v = await answer(w, id);
+  assert.equal(v.status, 'finished');
+  assert.deepEqual(v.end, { by: 'claude', decision: 'exhausted', judgeSeq: 2 });
+  assert.deepEqual(w.store.readSession(id).end, { by: 'claude', decision: 'exhausted', judgeSeq: 2 });
+  assert.equal(w.store.readJudge(id, 2).checked.decision, 'exhausted');
+  assert.equal(w.callsOf('question').length, 2);
+});
+
+test('핵심 영역의 줄기가 대부분 wrong이고 학습 신호가 없으면 settled로 끝나고 end.by는 claude', async () => {
+  const settled = judgment({ decision: 'settled', nextArea: '', direction: '' });
+  const wrongOpen = analysis({ score: 'wrong', defects: WRONG });
+  const wrongFollow = analysis({ score: 'wrong' });
+  const w = setup({ queues: { analyze: [wrongOpen, wrongFollow, wrongOpen, wrongFollow], endJudge: [judgment(), settled] } });
+  const id = await begin(w);
+  for (let i = 0; i < 3; i++) await answer(w, id);
+  const v = await answer(w, id);
+  assert.equal(v.status, 'finished');
+  assert.deepEqual(v.end, { by: 'claude', decision: 'settled', judgeSeq: 4 });
+  assert.equal(w.store.readJudge(id, 4).checked.decision, 'settled');
+});
+
 test('판정 호출이 실패하면 resume은 분석을 다시 하지 않고 판정부터 한다', async () => {
   const w = setup({ queues: { endJudge: [new Error('boom')] } });
   const id = await begin(w);
