@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { CLOSING_TEXT } from '../skills/pressure-interview/scripts/lib/app/session/session-rules.mjs';
-import { answer, fakeCalls, makeWorld, push, replies, run, stock } from './helpers.mjs';
+import { analysis, answer, fakeCalls, judgment, makeWorld, push, replies, run, stock } from './helpers.mjs';
 
 const TAIL = 'hidden 폴더와 errors.log를 읽지 않는다.';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -88,7 +88,7 @@ test('start는 질문을 낸다', () => {
   assert.equal(r.stdout, `${JSON.stringify(r.json)}\n`);
   assert.equal(r.json.ok, true);
   assert.equal(r.json.kind, 'question');
-  assert.ok(r.json.say.startsWith('**질문 1 · '), r.json.say);
+  assert.ok(r.json.say.includes('**질문 1 · '), r.json.say);
   assert.ok(r.json.answerFile.endsWith('/answers/01-1.txt'), r.json.answerFile);
   assert.equal(typeof r.json.interview, 'string');
 });
@@ -146,9 +146,10 @@ test('한 판: 답 하나, 끝, 복기, 고침, 표시, 추이', async () => {
   const a2 = answer(w, a1.json, '끝');
   // 답하지 않은 둘째 질문의 정답지 뒤 작업이 끝나야 호출 수가 멈춘다
   assert.ok(await waitFor(() => fs.existsSync(turnFile(w, id, 2, 'key.json'))));
-  assert.equal(a2.json.kind, 'finished');
-  assert.ok(a2.json.say.includes(CLOSING_TEXT));
+  assert.equal(a2.json.kind, 'review_ready', a2.stdout);
+  assert.ok(a2.json.say.startsWith(CLOSING_TEXT), a2.json.say);
   assert.equal(a2.json.answerFile, undefined);
+  assert.ok(fs.existsSync(a2.json.paths.review));
 
   const rv = run(w, ['review']);
   assert.equal(rv.json.kind, 'review_ready', rv.stdout);
@@ -168,30 +169,139 @@ test('한 판: 답 하나, 끝, 복기, 고침, 표시, 추이', async () => {
   assert.equal(rows.filter((r) => r.type === undefined).length, modelCalls(w).length);
 });
 
-test('끝난 뒤 복기 전의 resume은 끝낼 때의 출력을 다시 준다', async () => {
-  const w = world();
+test('끝내는 명령에서 복기가 일부 실패하면 마무리 문장과 review 안내를 내고, resume도 복기를 이어 한다', async () => {
+  const w = makeWorld();
+  push(w.fakeDir, 'review', { raw: '{"api_error_status":429,"is_error":true}' });
+  stock(w.fakeDir, replies());
   const s = start(w);
   const done = answer(w, answer(w, s.json, '첫 답').json, '끝');
-  // 답하지 않은 둘째 질문의 정답지 뒤 작업이 끝나야 호출 수가 멈춘다
   assert.ok(await waitFor(() => fs.existsSync(turnFile(w, s.json.interview, 2, 'key.json'))));
-  assert.equal(done.json.kind, 'finished');
-  const before = fakeCalls(w.fakeDir).length;
+  assert.equal(done.json.kind, 'review_partial', done.stdout);
+  assert.ok(done.json.say.startsWith(`${CLOSING_TEXT}\n\n`));
+  assert.ok(done.json.next.includes('review를 실행한다'));
   const r = run(w, ['resume']);
-  assert.equal(r.status, 0);
-  assert.equal(r.stderr, '');
-  assert.deepEqual(r.json, done.json);
-  assert.equal(fakeCalls(w.fakeDir).length, before);
-  assert.equal(run(w, ['review']).json.kind, 'review_ready');
+  assert.equal(r.json.kind, 'review_ready', r.stdout);
+  assert.ok(r.json.say.startsWith(CLOSING_TEXT));
   assert.equal(run(w, ['resume']).json.code, 'no_interview');
+});
+
+test('진행 중 면접이 있으면 start는 confirm_replace, --replace면 새 면접이 시작된다', () => {
+  const w = world();
+  const first = start(w);
+  const before = modelCalls(w).length;
+  const again = start(w, 'Kafka');
+  assert.equal(again.status, 0);
+  assert.equal(again.json.ok, true);
+  assert.equal(again.json.kind, 'confirm_replace');
+  assert.equal(again.json.say, '진행 중인 면접이 있습니다(Redis). 하던 면접을 끝내고 새로 시작할까요?');
+  assert.ok(again.json.next.includes("start --topic '<주제>' --replace"));
+  assert.equal(modelCalls(w).length, before);
+  const r = run(w, ['start', '--topic', 'Kafka', '--replace']);
+  assert.equal(r.json.kind, 'question', r.stdout);
+  assert.notEqual(r.json.interview, first.json.interview);
+  const old = JSON.parse(fs.readFileSync(path.join(w.dataDir, 'interviews', first.json.interview, 'hidden', 'session.json'), 'utf8'));
+  assert.equal(old.end.by, 'replaced');
+  assert.equal(run(w, ['status']).json.interview, r.json.interview);
+});
+
+test('첫 질문 say의 첫 줄이 시작 안내이고 질문 머리에 분모가 없다', () => {
+  const w = world();
+  const s = start(w);
+  const [first, blank, head] = s.json.say.split('\n');
+  assert.equal(first, "끝내고 싶으면 언제든 '끝'이라고 하세요. 바로 끝내고 복기를 시작합니다.");
+  assert.equal(blank, '');
+  assert.match(head, /^\*\*질문 1 · .+ 면접관\*\*$/);
+  assert.ok(!s.json.say.includes('/6'));
+  assert.ok(answer(w, s.json, '답').json.say.startsWith('**질문 2 · '));
+});
+
+test('답이 "끝"이면 review_ready이고 say가 마무리 문장으로 시작한다', () => {
+  const w = world();
+  const s = start(w);
+  const r = answer(w, s.json, '끝');
+  assert.equal(r.json.kind, 'review_ready', r.stdout);
+  assert.ok(r.json.say.startsWith(`${CLOSING_TEXT}\n\n`), r.json.say);
+  assert.equal(run(w, ['resume']).json.code, 'no_interview');
+});
+
+test('Claude가 끝내면 say가 Claude의 마무리 문장으로 시작하고 review.md가 생긴다', () => {
+  const signals = (...types) => types.map((type) => ({ type, quote: `${type} 인용` }));
+  const enough = judgment({ decision: 'enough', evidence: { knows: [1, 2], applies: [1, 2], learns: [1] }, nextArea: '', direction: '' });
+  const w = makeWorld();
+  for (const a of [
+    analysis({ score: 'solid', signals: signals('practical', 'reasoning') }),
+    analysis(),
+    analysis({ score: 'solid', signals: signals('practical') }),
+    analysis(),
+  ]) push(w.fakeDir, 'analyze', { data: a });
+  for (const j of [judgment(), enough]) push(w.fakeDir, 'endJudge', { data: j });
+  stock(w.fakeDir, replies());
+  let out = start(w).json;
+  for (let i = 0; i < 4; i++) out = answer(w, out, `답 ${i}`).json;
+  assert.equal(out.kind, 'review_ready', JSON.stringify(out));
+  assert.ok(out.say.startsWith('이 주제로 준비한 면접은 여기까지입니다. 수고하셨습니다.\n\n'), out.say);
+  assert.ok(fs.existsSync(out.paths.review));
+});
+
+test('상한에 닿으면 cap, answer와 resume도 cap이고 답 파일을 건드리지 않는다, continue면 question', () => {
+  const w = makeWorld({ questionCap: 2 });
+  push(w.fakeDir, 'endJudge', { data: judgment() });
+  push(w.fakeDir, 'endJudge', { data: judgment({ nextArea: 'price' }) });
+  stock(w.fakeDir, replies());
+  let out = start(w).json;
+  out = answer(w, out, 'a').json;
+  const cap = answer(w, out, 'b');
+  assert.equal(cap.json.kind, 'cap', cap.stdout);
+  assert.equal(cap.json.ok, true);
+  assert.equal(cap.json.say, "질문이 2개가 됐습니다. 이어 하려면 '계속', 끝내려면 '끝'이라고 하세요.");
+  assert.equal(cap.json.answerFile, undefined);
+  assert.ok(cap.json.next.includes('continue'));
+  const file = path.join(w.dataDir, 'interviews', cap.json.interview, 'answers', '03-1.txt');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, '끝');
+  const before = modelCalls(w).length;
+  assert.equal(run(w, ['answer']).json.kind, 'cap');
+  assert.equal(fs.readFileSync(file, 'utf8'), '끝');
+  assert.equal(run(w, ['resume']).json.kind, 'cap');
+  assert.equal(modelCalls(w).length, before);
+  const next = run(w, ['continue']);
+  assert.equal(next.json.kind, 'question', next.stdout);
+  assert.ok(next.json.say.includes('**질문 3 · '));
+});
+
+test('cap 뒤 finish면 review_ready이고 마무리 문장으로 시작한다', () => {
+  const w = makeWorld({ questionCap: 1 });
+  stock(w.fakeDir, replies());
+  const out = answer(w, start(w).json, 'a');
+  assert.equal(out.json.kind, 'cap');
+  const r = run(w, ['finish']);
+  assert.equal(r.json.kind, 'review_ready', r.stdout);
+  assert.ok(r.json.say.startsWith(CLOSING_TEXT));
+  const session = JSON.parse(fs.readFileSync(path.join(w.dataDir, 'interviews', out.json.interview, 'hidden', 'session.json'), 'utf8'));
+  assert.equal(session.end.by, 'cap');
+});
+
+test('예전 면접에 answer는 legacy_interview이고 finish는 복기까지 간다', () => {
+  const w = world();
+  const s = start(w);
+  const file = path.join(w.dataDir, 'interviews', s.json.interview, 'hidden', 'session.json');
+  const { topicMap: _drop, ...legacy } = JSON.parse(fs.readFileSync(file, 'utf8'));
+  fs.writeFileSync(file, JSON.stringify(legacy));
+  const r = answer(w, s.json, '답');
+  assert.equal(r.status, 1);
+  assert.equal(r.json.code, 'legacy_interview');
+  assert.equal(r.json.say, "예전 방식의 면접이라 이어 할 수 없습니다. '끝'으로 끝내고 새로 시작해 주세요.");
+  assert.equal(r.json.next, `사용자가 '끝'이라고 하면 finish를 실행한다. ${TAIL}`);
+  assert.equal(run(w, ['resume']).json.code, 'legacy_interview');
+  const done = run(w, ['finish']);
+  assert.equal(done.json.kind, 'review_ready', done.stdout);
 });
 
 test('진행 중이면 interview_open, 끝난 면접이 없으면 not_finished, 면접이 없으면 no_interview', () => {
   const w = world();
   start(w);
   const again = start(w, 'Kafka');
-  assert.equal(again.status, 1);
-  assert.equal(again.json.code, 'interview_open');
-  assert.ok(again.json.next.startsWith('사용자가 정하는 대로 resume으로 이어 가거나 finish로 끝낸다.'));
+  assert.equal(again.json.kind, 'confirm_replace');
   for (const args of [['review'], ['mark', '1', 'well'], ['surprise', '1', 'expected']]) {
     assert.equal(run(w, args).json.code, 'not_finished', args.join(' '));
   }

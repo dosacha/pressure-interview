@@ -7,7 +7,7 @@ import test from 'node:test';
 import {
   axisName, DEFECT_NAMES, QUESTION_INTENTS, REACTION_INTENTS, REACTION_TABLE, TEMPERAMENTS,
 } from '../skills/pressure-interview/scripts/lib/app/interview/catalog.mjs';
-import { analysis, answer, draft, key, makeWorld, push, replies, review, run, stock } from './helpers.mjs';
+import { analysis, answer, draft, judgment, key, makeWorld, push, replies, review, run, stock, topicMap } from './helpers.mjs';
 
 const M = '@@HIDDEN@@';
 // 카탈로그 값이라 표식을 심을 수 없는 숨김 필드는 이 흐름에서 생기는 화면 이름으로 본다.
@@ -30,7 +30,9 @@ const marked = () =>
       problems: [{ field: 'keyPoints', problem: M }],
       corrections: { lists: [{ field: 'keyPoints', items: [`${M} 고친 핵심`] }], alternatives: { changed: false, items: [] } },
     },
-    analyze: analysis({ defects: [{ type: 'wrong', axis: 'durability', note: M }] }),
+    analyze: analysis({ defects: [{ type: 'wrong', axis: 'durability', note: M }], signals: [{ type: 'practical', quote: M }] }),
+    topicMap: { areas: topicMap().areas.map((a) => ({ ...a, name: `${a.name} ${M}`, why: M, angles: [M] })) },
+    endJudge: judgment({ candidates: [{ question: M, verdict: 'repeat', why: M }], note: M, direction: M }),
     review: review({
       intent: { aimed: true, note: M },
       defects: [{ index: 0, verdict: 'valid', note: M }],
@@ -66,6 +68,7 @@ test('면접이 끝나기 전의 어떤 출력에도 표식이 없다', () => {
   const q = clean(answer(w, c.json, '답입니다.'), 'answer');
   assert.equal(q.json.kind, 'question');
   clean(run(w, ['resume']), 'resume');
+  assert.equal(clean(run(w, ['start', '--topic', 'Kafka']), 'start(진행 중)').json.kind, 'confirm_replace');
   clean(run(w, ['status']), 'status');
   for (const args of [['review'], ['mark', '1', 'well'], ['surprise', '1', 'expected']]) {
     assert.equal(clean(run(w, args), args[0]).json.code, 'not_finished');

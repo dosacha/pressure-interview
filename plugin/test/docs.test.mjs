@@ -23,6 +23,10 @@ test('명령표가 cli의 명령과 맞는다', () => {
   }
 });
 
+test('SKILL.md가 confirm_replace와 cap을 말한다', () => {
+  for (const word of ['confirm_replace', 'cap', 'review_ready']) assert.ok(skill.includes(word), word);
+});
+
 test('README가 밝힐 것을 밝힌다', () => {
   for (const word of ['35', '구독', 'hidden', 'claude', 'Node', 'answers', '권한']) assert.ok(readme.includes(word), word);
 });

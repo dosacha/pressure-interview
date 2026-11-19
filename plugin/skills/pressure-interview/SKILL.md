@@ -52,6 +52,8 @@ disable-model-invocation: true
 - `kind`가 `status`: `say`를 보여 준다.
 - `ok`가 `false`: `say`를 보여 준다. `next`를 따른다. `code`가 `usage_limit`이면 다시 하지 않는다.
 - 명령이 JSON 없이 끝났을 때(도구의 시간 제한 등): 파일을 열지 않는다. 사용자에게 처리가 끝나지 않았다고 알리고, 사용자가 다시 하겠다고 하면 `resume`을(복기를 만들던 중이었으면 `review`를) 실행한다.
-- `kind`가 `finished`: `say`를 보여 준다. 사용자가 복기를 만들겠다고 하면 `review`를 실행한다.
+- `kind`가 `confirm_replace`(진행 중인 면접이 있는데 `start`): `say`를 보여 주고 `next`를 따른다. 사용자의 대답은 면접의 답이 아니다.
+- `kind`가 `cap`(질문이 상한에 닿음): `say`를 보여 주고 `next`를 따른다. 사용자의 대답은 면접의 답이 아니다.
+- 면접이 끝나는 명령(`answer`, `finish`, `continue`, `resume`)은 같은 명령에서 복기까지 만든다. 끝났다는 별도의 `kind`는 없고 `review_ready`나 `review_partial`이 온다.
 - `kind`가 `review_partial`: `say`를 보여 준다. 사용자가 다시 하겠다고 하면 `review`를 실행한다.
 - `kind`가 `review_ready`, `marked`, `stats`: `say`와 문서의 경로를 알려 준다. 면접이 끝난 뒤에는 그 문서를 읽고 사용자와 이야기해도 된다.
