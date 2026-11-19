@@ -149,7 +149,7 @@ user 메시지에 당신의 직무와 성향이 있다. 직무는 당신이 주�
 
 ${listIntents(QUESTION_INTENTS, QUESTION_INTENT_DEFS)}
 
-반응 의도가 주어지면 질문은 그 반응 의도로 직전 답변에 반응한다. user 메시지가 덧붙이는 질문이라고 하면, 이 프롬프트에서 직전 답변이라고 한 곳은 모두 user 메시지가 가리키는 그 앞의 답변을 뜻한다. 다른 면접관이 같은 답변에 먼저 반응했고, 당신은 그 답변의 다른 결함에 반응하기 때문이다.
+반응 의도가 주어지면 질문은 그 반응 의도로 직전 답변에 반응한다.
 
 ${listIntents(REACTION_INTENTS, REACTION_INTENT_DEFS)}
 
@@ -170,7 +170,7 @@ ${AXES.map((a) => `- ${a.id} ${a.name}`).join('\n')}
 
 identity_swap은 기술 하나의 핵심 속성을 바꾼 가상의 기술을 세우고 다른 기술과 비교하게 하는 유형이다. 지원자가 실제로 당황했던 유형인데 공개된 사례가 드물다. 그래서 어떤 속성을 바꿨는지는 질문에서 분명히 말하되, 그 결과 무엇이 같아지고 무엇이 남는지는 지원자가 답하게 둔다. 무엇이 같아지고 무엇이 남는지가 이 질문으로 확인하려는 답이기 때문이다.
 
-user 메시지에 가정 변경 축이 지정돼 있으면 그 축으로 가정 변경 질문을 하고, assumption.axis에 그 축 id를 적는다. 지정이 없으면 가정을 바꿀지는 대화 흐름을 보고 정하고, 바꾼다면 직무가 주로 바꾸는 축을 먼저 고려한다. 반응 의도와 가정 변경 축이 함께 주어지면, 직전 답변에서 출발해 가정을 바꾼 질문 하나에 둘을 함께 담는다.
+user 메시지에 새 영역과 가정 변경 축이 지정돼 있으면 그 축으로 가정 변경 질문을 하고, assumption.axis에 그 축 id를 적는다. 지정이 없으면 가정을 바꿀지는 대화 흐름을 보고 정하고, 바꾼다면 직무가 주로 바꾸는 축을 먼저 고려한다. 반응 의도와 가정 변경 축이 함께 주어지면, 직전 답변에서 출발해 가정을 바꾼 질문 하나에 둘을 함께 담는다.
 
 assumption.statement에는 바뀐 가정을 기술 이름 없이 한 문장으로 쓴다. 예: "쓰기 요청이 읽기 요청보다 훨씬 많아진다." 다음 면접들은 이 문장으로 같은 가정을 알아보고, 잘 답한 가정은 다시 내지 않고 흔들린 가정은 다른 기술 조합에 끼워 다시 낸다. 기술 이름이 들어가면 기술이 바뀌었을 때 같은 가정인지 알아볼 수 없다. 가정을 바꾸지 않는 질문이면 assumption.axis는 none, statement는 빈 문자열로 둔다.
 
@@ -237,34 +237,28 @@ assumption.statement에는 바뀐 가정을 기술 이름 없이 한 문장으�
   }
 
   const turn           = [];
-  if (input.addOn) {
-    turn.push(
-      '- 덧붙이는 질문이다. 다른 면접관이 먼저 물었고 지원자가 거기에 답한 뒤에, "저도 하나 덧붙이면"처럼 시작해 얹는다. 이 질문이 반응하는 답변은 바로 앞 답변이 아니라 그 앞의 답변(대화 목록의 끝에서 두 번째)이다.',
-    );
-  }
-  const answer = input.addOn ? '그 앞의 답변' : '직전 답변';
+  const opening = input.opening;
   if (input.history.length === 0 && input.reactionIntent === null) {
     turn.push(
-      '- 이번이 면접의 첫 질문이다. 사회자가 없으므로 면접을 여는 것도 당신이다. 반응할 직전 답변이 없으니 주제에서 출발해 묻는다.' +
-        (input.targetAxis === null
-          ? ' 한 판 안의 질문 하나가 뻔한 것은 괜찮으므로, 주제의 기본 질문으로 시작해도 된다.'
-          : ' 아래에 지정된 축으로 곧바로 가정 변경 질문을 한다.'),
+      '- 이번이 면접의 첫 질문이다. 사회자가 없으므로 면접을 여는 것도 당신이다. 반응할 직전 답변이 없으니 주제에서 출발해 묻는다.',
+    );
+  }
+  if (opening) {
+    const { area, direction } = opening;
+    turn.push(
+      `- 새 영역: ${area.name}. 이 영역을 ${area.axis} ${axisName(area.axis)} 축의 가정을 바꿔 연다.${direction ? ` 방향: ${direction}` : ''}`,
+      '- 여는 질문은 교과서 정의를 묻지 않는다. 가정을 바꿔 무엇이 사라지고 무엇이 남는지 묻는다.',
     );
   }
   if (input.reactionIntent !== null) {
     turn.push(
-      `- 반응 의도: ${input.reactionIntent} ${REACTION_INTENTS[input.reactionIntent]}. ${answer}에 이 의도로 반응한다.`,
+      `- 반응 의도: ${input.reactionIntent} ${REACTION_INTENTS[input.reactionIntent]}. 직전 답변에 이 의도로 반응한다.`,
     );
   }
   if (input.defect !== null) {
     const note = input.defect.note ? `. ${input.defect.note}` : '';
     turn.push(
-      `- ${answer}의 결함: ${DEFECT_NAMES[input.defect.type]}(관련 축: ${axisName(input.defect.axis)})${note}`,
-    );
-  }
-  if (input.targetAxis !== null) {
-    turn.push(
-      `- 가정 변경: ${input.targetAxis} ${axisName(input.targetAxis)} 축으로 가정 변경 질문을 한다.`,
+      `- 직전 답변의 결함: ${DEFECT_NAMES[input.defect.type]}(관련 축: ${axisName(input.defect.axis)})${note}`,
     );
   }
   if (turn.length > 0) lines.push('이번 질문:', ...turn);

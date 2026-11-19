@@ -9,7 +9,7 @@ const input                = {
   interviewer: { id: 'p1', role: 'dba', temperament: 'shaker' },
   reactionIntent: 'B9',
   defect: { type: 'wrong', axis: 'durability', note: 'AOF 설명 오류' },
-  targetAxis: 'identity_swap',
+  opening: null,
   history: [{ interviewerId: 'p2', text: 'Q', answer: 'A' }],
   userMentioned: ['Redis'],
   feedback: ['Kafka를 꺼내지 마라'],
@@ -69,7 +69,6 @@ describe('question.call', () => {
       '흔드는형',
       'B9',
       'AOF 설명 오류',
-      '정체성 비교',
       'Kafka를 꺼내지 마라',
     ])
       expect(user).toContain(s);
@@ -94,13 +93,39 @@ describe('question.call', () => {
     for (const a of AXES) expect(systemLines).toContain(`- ${a.id} ${a.name}`);
     expect(systemLines).toContain('- none 가정을 바꾸지 않는 질문');
   });
-  it('축이 지정된 첫 질문에는 기본 질문 안내가 없다', () => {
-    const first = { ...input, reactionIntent: null, defect: null, history: [], feedback: [] };
-    const basic = '기본 질문으로 시작해도 된다';
-    expect(buildQuestionPrompt({ ...first, targetAxis: null }).user).toContain(basic);
-    const { user } = buildQuestionPrompt(first);
+  it('여는 질문의 user 메시지가 영역, 축, 방향을 싣고 가정 변경을 요구한다', () => {
+    const opening = {
+      area: { name: '캐시 만료', axis: 'identity_swap', angles: [] },
+      direction: '만료가 없는 캐시라면 무엇이 남는가',
+    };
+    const { user } = buildQuestionPrompt({ ...input, reactionIntent: null, defect: null, opening });
+    expect(user).toContain('새 영역: 캐시 만료. 이 영역을 identity_swap 기술의 핵심 속성 바꾸기(정체성 비교) 축의 가정을 바꿔 연다.');
+    expect(user).toContain('방향: 만료가 없는 캐시라면 무엇이 남는가');
+    expect(user).toContain('교과서 정의를 묻지 않는다');
+    expect(user).not.toContain('반응 의도');
+  });
+  it('첫 질문도 여는 질문이라 기본 질문으로 시작해도 된다가 없다', () => {
+    const opening = { area: { name: 'Redis', axis: 'durability', angles: [] }, direction: '' };
+    const { user } = buildQuestionPrompt({
+      ...input, reactionIntent: null, defect: null, history: [], feedback: [], opening,
+    });
     expect(user).toContain('첫 질문');
-    expect(user).not.toContain(basic);
+    expect(user).toContain('새 영역: Redis.');
+    expect(user).not.toContain('기본 질문으로 시작해도');
+    expect(user).not.toContain('방향:');
+  });
+  it('꼬리질문의 user 메시지에 영역 지시가 없고 반응 의도와 결함이 있다', () => {
+    const { user } = buildQuestionPrompt(input);
+    expect(user).not.toContain('새 영역');
+    expect(user).toContain('반응 의도: B9');
+    expect(user).toContain('직전 답변의 결함');
+  });
+  it('덧붙이는 질문 문장이 프롬프트 어디에도 없다', () => {
+    const { system, user } = buildQuestionPrompt(input);
+    for (const s of ['저도 하나 덧붙이면', '덧붙이는 질문']) {
+      expect(system).not.toContain(s);
+      expect(user).not.toContain(s);
+    }
   });
   it('기억의 세 목록을 축 이름과 함께 싣고, 빈 목록의 줄은 넣지 않는다', () => {
     const { user } = buildQuestionPrompt({
@@ -137,48 +162,19 @@ describe('question.call', () => {
     const empty = { retired: [], reissue: [], expected: [] };
     expect(buildQuestionPrompt({ ...input, memory: empty }).user).not.toContain('기억(');
   });
-  it('모른다고 한 기술 줄과 덧붙이는 질문 줄을 넣는다', () => {
+  it('모른다고 한 기술 줄을 이번 질문 앞에 넣는다', () => {
     const { user } = buildQuestionPrompt({
       ...input,
       avoidTechs: ['Memcached', 'Lua'],
-      addOn: true,
       memory: { retired: [{ axis: 'durability', statement: 's' }], reissue: [], expected: [] },
     });
     const avoid =
       '지원자가 모른다고 한 기술(질문에 다시 넣지 않는다. 전제로도 쓰지 않는다): Memcached, Lua';
-    const addOn =
-      '- 덧붙이는 질문이다. 다른 면접관이 먼저 물었고 지원자가 거기에 답한 뒤에, "저도 하나 덧붙이면"처럼 시작해 얹는다. 이 질문이 반응하는 답변은 바로 앞 답변이 아니라 그 앞의 답변(대화 목록의 끝에서 두 번째)이다.';
-    expect(user).toContain(avoid);
-    expect(user).toContain(`이번 질문:
-${addOn}
-`);
-    const order = [
-      '지원자가 지금까지 말한 기술',
-      avoid,
-      '기억(이전 면접들에서 만난 가정):',
-      '이번 질문:',
-      addOn,
-      '- 반응 의도',
-      '- 그 앞의 답변의 결함',
-    ].map((s) => user.indexOf(s));
+    const order = ['지원자가 지금까지 말한 기술', avoid, '기억(이전 면접들에서 만난 가정):', '이번 질문:', '- 반응 의도'].map((s) => user.indexOf(s));
     expect(order).toEqual([...order].sort((a, b) => a - b));
-    expect(user).toContain('그 앞의 답변에 이 의도로 반응한다');
-    expect(user).toContain('그 앞의 답변의 결함');
-    expect(user).not.toContain('직전 답변에 이 의도로 반응한다');
-    expect(user).not.toContain('직전 답변의 결함');
-    const plain = buildQuestionPrompt(input).user;
-    expect(plain).not.toContain('모른다고 한 기술');
-    expect(plain).not.toContain('덧붙이는 질문');
-    for (const u of [plain, buildQuestionPrompt({ ...input, addOn: false }).user]) {
-      expect(u).toContain('직전 답변에 이 의도로 반응한다');
-      expect(u).toContain('직전 답변의 결함');
-      expect(u).not.toContain('그 앞의 답변');
-    }
-  });
-  it('시스템 프롬프트가 덧붙이는 질문의 직전 답변을 그 앞의 답변으로 읽게 한다', () => {
-    expect(buildQuestionPrompt(input).system).toContain(
-      'user 메시지가 덧붙이는 질문이라고 하면, 이 프롬프트에서 직전 답변이라고 한 곳은 모두 user 메시지가 가리키는 그 앞의 답변을 뜻한다.',
-    );
+    expect(order).not.toContain(-1);
+    expect(user).toContain('직전 답변에 이 의도로 반응한다');
+    expect(buildQuestionPrompt(input).user).not.toContain('모른다고 한 기술');
   });
   it('시스템 프롬프트는 면접관이 달라도 글자 하나 다르지 않다', () => {
     const textbook = { ...input, interviewer: { ...input.interviewer, role: 'textbook'          } };

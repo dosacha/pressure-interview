@@ -431,7 +431,7 @@ test('덧붙이기: secondary가 있으면 다음 질문 뒤에 다른 면접관
   assert.equal(t3.interviewerId, 'p3');
   assert.equal(t3.causeTurnId, '01');
   assert.equal(t3.pendingSecondary, null);
-  assert.ok(w.callsOf('question').at(-1).user.includes('덧붙이는 질문'));
+  assert.ok(!w.callsOf('question').at(-1).user.includes('덧붙이는 질문'));
 });
 
 test('덧붙이기가 기다리는데 지원자가 모른다고 하면 덧붙이기를 버리고 같은 면접관이 넘어간다', async () => {
@@ -474,7 +474,7 @@ test('절반을 넘도록 가정 변경이 없으면 정체성 비교 축을 지
   await answer(w, id);
   assert.ok(!w.callsOf('question').at(-1).user.includes('identity_swap'));
   await answer(w, id);
-  assert.ok(w.callsOf('question').at(-1).user.includes('가정 변경: identity_swap'));
+  assert.ok(w.callsOf('question').at(-1).user.includes('새 영역: '));
   assert.equal(w.store.readTurns(id)[2].targetAxis, 'identity_swap');
 });
 

@@ -165,8 +165,7 @@ export function createInterviewService({ store, config, llmFor, rng = Math.rando
       interviewer: member(session, next.choice.interviewerId),
       reactionIntent: next.choice.reactionIntent,
       defect: next.choice.defect,
-      addOn: next.addOn,
-      targetAxis,
+      opening: targetAxis && { area: { name: session.topic, axis: targetAxis, angles: [] }, direction: '' },
       history: historyOf(turns),
       userMentioned: session.userMentioned,
       avoidTechs: session.unknownTechs,
@@ -254,12 +253,11 @@ export function createInterviewService({ store, config, llmFor, rng = Math.rando
         interviewer: opener,
         reactionIntent: null,
         defect: null,
-        targetAxis: null,
+        opening: { area: { name: topic, axis: ROLES[opener.role].axes[0], angles: [] }, direction: '' },
         history: [],
         userMentioned: [topic],
         feedback: [],
         avoidTechs: [],
-        addOn: false,
         memory,
       });
       // 질문을 먼저 쓰고 세션을 쓴다. 세션이 있으면 턴도 있다.
