@@ -6,7 +6,7 @@ import { EngineError } from './errors.mjs';
 
 export const DEFAULTS = {
   dataDir: null,
-  questionLimit: 6,
+  questionCap: 30,
   maxConsecutive: 2,
   maxRegenerations: 1,
   reissueAfterHours: 24,
@@ -31,7 +31,7 @@ export const DEFAULTS = {
 };
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
-const POSITIVE_INTS = ['maxConsecutive', 'maxRegenerations', 'reissueAfterHours', 'reviewConcurrency', 'callTimeoutMs', 'pollMs'];
+const POSITIVE_INTS = ['questionCap', 'maxConsecutive', 'maxRegenerations', 'reissueAfterHours', 'reviewConcurrency', 'callTimeoutMs', 'pollMs'];
 
 export function configPath(env = process.env) {
   const home = env.PRESSURE_INTERVIEW_HOME || os.homedir();
@@ -67,10 +67,9 @@ function mergeCalls(base, over) {
 const isStringArray = (v) => Array.isArray(v) && v.every((s) => typeof s === 'string');
 
 function resolve(raw) {
-  const cfg = { ...DEFAULTS, ...raw, calls: mergeCalls(DEFAULTS.calls, raw.calls) };
-  if (!Number.isInteger(cfg.questionLimit) || cfg.questionLimit < 2 || cfg.questionLimit > 30) {
-    throw bad('questionLimit은 2~30의 정수여야 한다');
-  }
+  // 예전 설정의 questionLimit는 무시한다.
+  const { questionLimit: _ignored, ...rest } = raw;
+  const cfg = { ...DEFAULTS, ...rest, calls: mergeCalls(DEFAULTS.calls, raw.calls) };
   for (const key of POSITIVE_INTS) {
     if (!Number.isInteger(cfg[key]) || cfg[key] < 1) throw bad(`${key}는 1 이상의 정수여야 한다`);
   }

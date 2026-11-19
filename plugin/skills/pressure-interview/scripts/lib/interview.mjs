@@ -2,11 +2,14 @@
 // 세션 잠금이 없고(한 세션이 한 번에 명령 하나를 돌린다), 정답지는 key.lock을 쥔 쪽만 쓴다.
 import { ROLES } from './app/interview/catalog.mjs';
 import { selectMemory } from './app/memory/memory-rules.mjs';
-import { chooseTargetAxis, CLOSING_TEXT, composePanel, nextAsker, pickOpener } from './app/session/session-rules.mjs';
+import { CLOSING_TEXT, composePanel } from './app/session/session-rules.mjs';
 import { EngineError } from './errors.mjs';
+import { areaStatus, checkJudgment, pickNextArea, pickOpenerFor, threadsOf } from './thread.mjs';
 import { TurnService } from './turn.service.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const CAP_STEP = 30;
+const DEEPEN_NOTE = '직전 답은 핵심을 원리로 맞게 설명했다. 같은 가정에서 한 단계 더 깊이 묻는다.';
 
 // 질문과 정답지 호출에 넘기는 대화: 답한 턴마다 질문 문장과 되묻기 기록, 답.
 function historyOf(turns) {
@@ -32,6 +35,7 @@ function answerOf(turn, over) {
     clarifications: turn.clarifications,
     analysis: turn.analysis,
     pick: turn.pick,
+    askedUnknown: turn.askedUnknown,
     ...over,
   };
 }
@@ -69,7 +73,6 @@ export function createInterviewService({ store, config, llmFor, rng = Math.rando
       interviewer: member(session, turn.interviewerId),
       reactionIntent: turn.reactionIntent,
       defect: turn.defect,
-      addOn: turn.addOn,
       history: historyOf(turns.filter((t) => t.seq < turn.seq)),
       draft: draftOf(turn.question),
     };
@@ -124,7 +127,11 @@ export function createInterviewService({ store, config, llmFor, rng = Math.rando
       unknownTechs: [...new Set([...session.unknownTechs, ...result.unknownTechs])],
     });
     // 되묻기여도 분석을 저장한다. 되묻기 응답이 실패했을 때 같은 입력을 다시 분석하지 않기 위해서다.
-    store.writeAnswer(id, turn.seq, answerOf(turn, { analysis: result.analysis, pick: result.pick }));
+    store.writeAnswer(
+      id,
+      turn.seq,
+      answerOf(turn, { analysis: result.analysis, pick: result.pick, askedUnknown: result.askedUnknown }),
+    );
   }
 
   async function replyToClarification(id, session, turn) {
@@ -146,63 +153,145 @@ export function createInterviewService({ store, config, llmFor, rng = Math.rando
       clarifications: [...turn.clarifications, { ask, reply, leak }],
       analysis: null,
       pick: null,
+      askedUnknown: null,
     });
   }
 
-  async function nextQuestion(id, session, turns) {
-    const last = turns.at(-1);
-    if (!last.pick) throw new Error(`답 분석에 다음 질문자가 없다: ${last.id}`);
-    // 기다리는 덧붙임은 새 턴의 question.json에 함께 둔다. 질문이 만들어지기 전에 실패하면 다시 할 때 같은 질문자가 나온다.
-    const next = nextAsker({ lastTurnId: last.id, pick: last.pick, pending: last.pendingSecondary });
-    const nextSeq = turns.length + 1;
-    const targetAxis = chooseTargetAxis({
-      nextSeq,
-      questionLimit: session.questionLimit,
-      assumptionAxes: turns.map((t) => t.question.assumption.axis),
-    });
+  // 질문 하나를 만들어 쓴다. 정답지 뒤 작업은 부르는 쪽이 띄운다(시작은 세션을 쓴 뒤에 띄운다).
+  async function ask(id, session, turns, turn, interviewer, opening) {
+    const seq = turns.length + 1;
     const prepared = await engine(id).prepareDraft({
       topic: session.topic,
-      interviewer: member(session, next.choice.interviewerId),
-      reactionIntent: next.choice.reactionIntent,
-      defect: next.choice.defect,
-      opening: targetAxis && { area: { name: session.topic, axis: targetAxis, angles: [] }, direction: '' },
+      interviewer,
+      reactionIntent: turn.reactionIntent,
+      defect: turn.defect,
+      opening,
       history: historyOf(turns),
       userMentioned: session.userMentioned,
       avoidTechs: session.unknownTechs,
       memory: session.memory,
       feedback: [],
     });
-    store.writeQuestion(
-      id,
-      nextSeq,
-      questionFile(prepared, {
-        interviewerId: next.choice.interviewerId,
-        addOn: next.addOn,
-        causeTurnId: next.causeTurnId,
-        reactionIntent: next.choice.reactionIntent,
-        defect: next.choice.defect,
-        targetAxis,
-        pendingSecondary: next.pending,
-      }),
-    );
-    launchCompletion(id, nextSeq);
+    store.writeQuestion(id, seq, questionFile(prepared, { interviewerId: interviewer.id, ...turn }));
+    return seq;
   }
 
-  function finishSession(id, session) {
-    store.writeSession(id, { ...session, status: 'finished', finishedAt: now() });
+  // 새 줄기의 여는 질문. 영역의 축을 맡은 면접관이 반응 의도 없이 연다.
+  function openThread(id, session, turns, areaId, direction) {
+    const area = session.topicMap.areas.find((a) => a.id === areaId);
+    const opener = pickOpenerFor({
+      area,
+      panel: session.panel,
+      history: turns.map((t) => t.interviewerId),
+      maxConsecutive: config.maxConsecutive,
+    });
+    const no = (turns.at(-1)?.thread?.no ?? 0) + 1;
+    return ask(
+      id,
+      session,
+      turns,
+      { causeTurnId: null, reactionIntent: null, defect: null, thread: { no, role: 'open', areaId, followKind: null } },
+      opener,
+      { area: { name: area.name, axis: area.axis, angles: area.angles }, direction },
+    );
+  }
+
+  // 같은 줄기의 꼬리질문 하나. 심화는 연 사람이, 결함은 그 결함을 맡은 사람(pickNext)이 묻는다.
+  function followUp(id, session, turns, thread) {
+    const opened = turns.find((t) => t.seq === thread.openSeq);
+    let choice;
+    if (thread.followKind === 'deepen') {
+      const { axis } = session.topicMap.areas.find((a) => a.id === thread.areaId);
+      choice = { interviewerId: opened.interviewerId, reactionIntent: 'B1', defect: { type: 'none', axis, note: DEEPEN_NOTE } };
+    } else {
+      if (!opened.pick) throw new Error(`답 분석에 다음 질문자가 없다: ${opened.id}`);
+      choice = opened.pick;
+    }
+    return ask(
+      id,
+      session,
+      turns,
+      {
+        causeTurnId: opened.id,
+        reactionIntent: choice.reactionIntent,
+        defect: choice.defect,
+        thread: { no: thread.no, role: 'follow', areaId: thread.areaId, followKind: thread.followKind },
+      },
+      member(session, choice.interviewerId),
+      null,
+    );
+  }
+
+  // 닫힌 줄기의 마지막 턴에 판정을 남긴다. 판정에는 장부만 넘기고 답의 전문은 넘기지 않는다.
+  async function judge(id, session, turns, threads, seq) {
+    const textOf = (s) => (s === null ? null : turns.find((t) => t.seq === s).question.text);
+    const ledger = threads.map((t) => ({
+      no: t.no,
+      areaId: t.areaId,
+      openText: textOf(t.openSeq),
+      followText: textOf(t.followSeq),
+      followKind: t.followKind,
+      openScore: t.openScore,
+      followScore: t.followScore,
+      score: t.score,
+      signals: t.signals,
+      depthLimit: t.depthLimit,
+      unknownPremise: t.unknownPremise,
+    }));
+    const { topicMap } = session;
+    const status = areaStatus(topicMap, threads);
+    const { judgment } = await engine(id).judgeEnd({
+      topic: session.topic,
+      topicMap,
+      ledger,
+      unaskedAreaIds: topicMap.areas.filter((a) => !status[a.id].asked).map((a) => a.id),
+    });
+    const result = { judgment, checked: checkJudgment({ judgment, topicMap, threads }), at: now() };
+    store.writeJudge(id, seq, result);
+    return result;
+  }
+
+  function finishSession(id, session, end) {
+    store.writeSession(id, { ...session, status: 'finished', finishedAt: now(), end });
+  }
+
+  function assertCurrent(session) {
+    if (!session.topicMap) throw new EngineError('legacy_interview');
   }
 
   // 파일을 보고 빠진 단계를 한다. 할 일이 있었으면 true.
   async function proceed(id) {
     let { session, turns, last } = load(id);
-    if (session.status === 'finished' || last.answer === null) return false;
+    if (session.status === 'finished' || session.capPending || last.answer === null) return false;
     if (last.analysis === null) {
       await analyze(id, session, turns);
       ({ session, turns, last } = load(id));
     }
-    if (last.analysis.kind === 'clarify') await replyToClarification(id, session, last);
-    else if (turns.length >= session.questionLimit) finishSession(id, session);
-    else await nextQuestion(id, session, turns);
+    if (last.analysis.kind === 'clarify') {
+      await replyToClarification(id, session, last);
+      return true;
+    }
+    const threads = threadsOf(turns);
+    const thread = threads.find((t) => t.no === last.thread.no);
+    let next = null;
+    if (thread.closed) {
+      // 판정이 남아 있으면 다시 부르지 않는다. 판정이 실패한 뒤 다시 하면 판정부터 한다.
+      const { judgment, checked } = store.readJudge(id, last.seq) ?? (await judge(id, session, turns, threads, last.seq));
+      if (checked.decision !== 'continue') {
+        finishSession(id, session, { by: 'claude', decision: checked.decision, judgeSeq: last.seq });
+        return true;
+      }
+      // 코드가 영역을 바꿨으면 판정의 방향은 다른 영역의 것이다.
+      next = { areaId: checked.nextAreaId, direction: checked.nextAreaId === judgment.nextArea ? judgment.direction : '' };
+    }
+    if (turns.length + 1 > session.questionCap) {
+      store.writeSession(id, { ...session, capPending: true });
+      return true;
+    }
+    const seq = next
+      ? await openThread(id, session, turns, next.areaId, next.direction)
+      : await followUp(id, session, turns, thread);
+    launchCompletion(id, seq);
     return true;
   }
 
@@ -215,12 +304,12 @@ export function createInterviewService({ store, config, llmFor, rng = Math.rando
       id,
       topic: session.topic,
       status: session.status,
-      questionLimit: session.questionLimit,
       turnCount: turns.length,
+      capPending: session.capPending ?? false,
+      end: session.end ?? null,
       open: open && {
         seq: open.seq,
         roleName: ROLES[member(session, open.interviewerId).role].name,
-        addOn: open.addOn,
         text: open.question.text,
         clarifications: open.clarifications.map((c) => ({ ask: c.ask, reply: c.reply })),
         inputNo: open.clarifications.length + 1,
@@ -238,47 +327,23 @@ export function createInterviewService({ store, config, llmFor, rng = Math.rando
     current,
     view,
 
-    async start({ topic, questionLimit }) {
-      if (current() !== null) throw new EngineError('interview_open');
+    async start({ topic, replace = false }) {
+      const old = current();
+      if (old !== null && !replace) throw new EngineError('interview_open');
       const createdAt = now();
       // 호출 기록을 남길 곳이 있어야 하므로 폴더를 먼저 만든다. session.json이 없는 폴더는 면접으로 치지 않는다.
       const id = store.createInterview(topic, createdAt);
       const memory = selectMemory(store.readMemory(), createdAt, config.reissueAfterHours);
       const turnService = engine(id);
-      const { role } = await turnService.pickJobRole(topic);
-      const panel = composePanel(role, rng);
-      const opener = pickOpener(panel, rng);
-      const prepared = await turnService.prepareDraft({
-        topic,
-        interviewer: opener,
-        reactionIntent: null,
-        defect: null,
-        opening: { area: { name: topic, axis: ROLES[opener.role].axes[0], angles: [] }, direction: '' },
-        history: [],
-        userMentioned: [topic],
-        feedback: [],
-        avoidTechs: [],
-        memory,
-      });
-      // 질문을 먼저 쓰고 세션을 쓴다. 세션이 있으면 턴도 있다.
-      store.writeQuestion(
-        id,
-        1,
-        questionFile(prepared, {
-          interviewerId: opener.id,
-          addOn: false,
-          causeTurnId: null,
-          reactionIntent: null,
-          defect: null,
-          targetAxis: null,
-          pendingSecondary: null,
-        }),
-      );
-      store.writeSession(id, {
+      const [{ role }, { topicMap }] = await Promise.all([turnService.pickJobRole(topic), turnService.pickTopicMap(topic)]);
+      const session = {
         id,
         topic,
-        panel,
-        questionLimit: questionLimit ?? config.questionLimit,
+        panel: composePanel(role, rng),
+        topicMap,
+        questionCap: config.questionCap,
+        capPending: false,
+        end: null,
         status: 'in_progress',
         userMentioned: [topic],
         unknownTechs: [],
@@ -286,7 +351,11 @@ export function createInterviewService({ store, config, llmFor, rng = Math.rando
         createdAt,
         finishedAt: null,
         reviewedAt: null,
-      });
+      };
+      // 질문을 먼저 쓰고 세션을 쓴다. 세션이 있으면 턴도 있다. 하던 면접은 새 면접이 준비된 뒤에 끝낸다.
+      await openThread(id, session, [], pickNextArea({ wanted: null, topicMap, threads: [] }), '');
+      if (old !== null) finishSession(old, store.readSession(old), { by: 'replaced' });
+      store.writeSession(id, session);
       launchCompletion(id, 1);
       return view(id);
     },
@@ -295,6 +364,13 @@ export function createInterviewService({ store, config, llmFor, rng = Math.rando
       const startedAt = Date.now();
       const session = store.readSession(id);
       if (session.status === 'finished') throw new EngineError('finished');
+      // 공백을 뺀 "끝"만 끝내기다. 답으로 저장하지 않는다. 예전 면접도 이렇게 끝낼 수 있다.
+      if (text?.trim() === '끝') {
+        if (answerFile) store.removeAnswerFile(answerFile);
+        finishSession(id, session, { by: 'user' });
+        return view(id);
+      }
+      assertCurrent(session);
       const last = store.readTurns(id).at(-1);
       // 답이 이미 저장된 턴이면 앞 명령이 중간에 멈춘 것이다. 새 글은 버리고 이어 간다.
       if (last.answer === null) {
@@ -307,6 +383,8 @@ export function createInterviewService({ store, config, llmFor, rng = Math.rando
     },
 
     async resume(id) {
+      const session = store.readSession(id);
+      if (session.status !== 'finished') assertCurrent(session);
       if (!(await proceed(id))) {
         // 할 일이 없었으면 열린 질문의 뒤 작업이 남아 있는지 본다. 잠금이 잡히면 아무도 쓰고 있지 않다.
         const { open } = view(id);
@@ -321,9 +399,19 @@ export function createInterviewService({ store, config, llmFor, rng = Math.rando
       return view(id);
     },
 
-    async finish(id) {
+    // 안전장치에서 이어 하기. 상한을 늘리고, 멈춘 곳(다음 줄기나 꼬리질문)부터 잇는다.
+    async continueAfterCap(id) {
       const session = store.readSession(id);
-      if (session.status !== 'finished') finishSession(id, session);
+      if (session.status === 'finished') throw new EngineError('finished');
+      assertCurrent(session);
+      if (session.capPending) store.writeSession(id, { ...session, questionCap: session.questionCap + CAP_STEP, capPending: false });
+      await proceed(id);
+      return view(id);
+    },
+
+    async finish(id, by = 'user') {
+      const session = store.readSession(id);
+      if (session.status !== 'finished') finishSession(id, session, { by });
       return view(id);
     },
 

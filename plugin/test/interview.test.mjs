@@ -8,7 +8,7 @@ import { CLOSING_TEXT } from '../skills/pressure-interview/scripts/lib/app/sessi
 import { DEFAULTS } from '../skills/pressure-interview/scripts/lib/config.mjs';
 import { createInterviewService } from '../skills/pressure-interview/scripts/lib/interview.mjs';
 import { openStore } from '../skills/pressure-interview/scripts/lib/store.mjs';
-import { analysis, draft, fakeLlm, key } from './helpers.mjs';
+import { analysis, draft, fakeLlm, judgment, key, topicMap } from './helpers.mjs';
 
 const plain = (text = '기본 질문입니다.') => draft({ text, assumption: { axis: 'none', statement: '' } });
 const NO_CORRECTIONS = { premiseOk: true, problems: [], corrections: { lists: [], alternatives: { changed: false, items: [] } } };
@@ -17,12 +17,8 @@ const CORRECTING_VERIFY = {
   problems: [{ field: 'keyPoints', problem: 'p' }],
   corrections: { lists: [{ field: 'keyPoints', items: ['고친 핵심'] }], alternatives: { changed: false, items: [] } },
 };
-const WITH_SECONDARY = analysis({
-  defects: [
-    { type: 'wrong', axis: 'durability', note: 'n1' },
-    { type: 'missing_axis', axis: 'scale', note: 'n2' },
-  ],
-});
+const WRONG = [{ type: 'wrong', axis: 'durability', note: 'n1' }];
+const SOLID = analysis({ score: 'solid' });
 const CLARIFY = analysis({ kind: 'clarify' });
 const REPLY = '범위는 한 대의 서버입니다.';
 const DEFAULT_REPLIES = {
@@ -34,6 +30,8 @@ const DEFAULT_REPLIES = {
   verify: NO_CORRECTIONS,
   analyze: analysis(),
   clarify: { reply: REPLY },
+  topicMap: topicMap(),
+  endJudge: judgment(),
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -64,6 +62,7 @@ function setup({ queues = {}, launch, configPatch = {} } = {}) {
   const turnDir = (id, seq) => path.join(dataDir, 'interviews', id, 'hidden', 'turns', String(seq).padStart(2, '0'));
   return { dataDir, store, config, fake, launched, svc, callsOf, kinds, turnDir };
 }
+const threadOf = (w, id, seq) => w.store.readTurns(id).find((t) => t.seq === seq).thread;
 
 async function begin(w, over = {}) {
   const v = await w.svc.start({ topic: 'Redis', ...over });
@@ -71,21 +70,31 @@ async function begin(w, over = {}) {
 }
 const answer = (w, id, text = '답입니다.') => w.svc.submitAnswer(id, text);
 
-test('시작하면 직무를 고르고 첫 질문을 만든다', async () => {
+test('시작하면 직무와 주제 지도를 부르고, 첫 질문은 첫 핵심 영역의 여는 질문이다', async () => {
   const w = setup();
   const v = await w.svc.start({ topic: 'Redis' });
-  assert.deepEqual(w.kinds(), ['jobRole', 'question', 'leak']);
+  assert.deepEqual(w.kinds(), ['jobRole', 'topicMap', 'question', 'leak']);
   const s = w.store.readSession(v.id);
   assert.equal(s.panel.length, 3);
   assert.deepEqual(s.panel.map((m) => m.role), ['dba', 'textbook', 'scenario']);
   assert.deepEqual(s.userMentioned, ['Redis']);
   assert.equal(s.status, 'in_progress');
+  assert.deepEqual(s.topicMap, topicMap());
+  assert.equal(s.questionCap, 30);
+  assert.equal(s.capPending, false);
+  assert.equal(s.end, null);
+  assert.equal('questionLimit' in s, false);
   const [t] = w.store.readTurns(v.id);
   assert.equal(t.question.answerKey, null);
-  assert.equal(t.pendingSecondary, null);
+  assert.deepEqual(t.thread, { no: 1, role: 'open', areaId: 'persist', followKind: null });
+  assert.equal(t.causeTurnId, null);
+  assert.equal(t.reactionIntent, null);
+  assert.equal(t.defect, null);
+  // 영속성(durability)은 DBA가 맡는다
+  assert.equal(t.interviewerId, s.panel.find((m) => m.role === 'dba').id);
+  assert.ok(w.callsOf('question')[0].user.includes('새 영역: 영속성'));
   assert.equal(v.open.seq, 1);
   assert.equal(v.open.inputNo, 1);
-  assert.equal(v.open.addOn, false);
   assert.equal(v.open.text, '기본 질문입니다.');
   assert.equal(v.open.roleName, 'DBA');
   assert.deepEqual(v.open.clarifications, []);
@@ -119,21 +128,267 @@ test('시작이 실패하면 면접이 남지 않는다', async () => {
   assert.equal(w.svc.current(), null);
 });
 
-test('답하면 분석하고 다음 질문을 만든다', async () => {
+test('진행 중인 면접을 replace로 시작하면 하던 면접은 end.by replaced로 끝나고 새 면접이 진행 중이다', async () => {
+  const w = setup();
+  const old = await begin(w);
+  const v = await w.svc.start({ topic: 'Kafka', replace: true });
+  const s = w.store.readSession(old);
+  assert.equal(s.status, 'finished');
+  assert.deepEqual(s.end, { by: 'replaced' });
+  assert.ok(s.finishedAt instanceof Date);
+  assert.equal(w.svc.current(), v.id);
+  assert.notEqual(v.id, old);
+});
+
+test('replace로 시작하다 실패하면 하던 면접은 그대로 진행 중이다', async () => {
+  const w = setup({ queues: { question: [plain(), new Error('boom')] } });
+  const old = await begin(w);
+  await assert.rejects(w.svc.start({ topic: 'Kafka', replace: true }), /boom/);
+  assert.equal(w.store.readSession(old).status, 'in_progress');
+  assert.equal(w.svc.current(), old);
+});
+
+test('대체로 앎에 결함이 없으면 꼬리질문 없이 판정하고, 판정이 continue면 다음 영역을 맡은 면접관이 연다', async () => {
   const w = setup();
   const id = await begin(w);
   const v = await answer(w, id);
   assert.equal(v.turnCount, 2);
   assert.equal(v.open.seq, 2);
+  assert.equal(w.callsOf('endJudge').length, 1);
   const [first, second] = w.store.readTurns(id);
   assert.equal(first.answer, '답입니다.');
   assert.notEqual(first.analysis, null);
+  const judge = w.store.readJudge(id, 1);
+  assert.deepEqual(judge.judgment, judgment());
+  assert.deepEqual(judge.checked, { decision: 'continue', nextAreaId: 'scaling', failed: [] });
+  assert.ok(judge.at);
+  assert.deepEqual(second.thread, { no: 2, role: 'open', areaId: 'scaling', followKind: null });
+  // 확장(scale)은 시나리오형이 맡는다
+  const s = w.store.readSession(id);
+  assert.equal(second.interviewerId, s.panel.find((m) => m.role === 'scenario').id);
+  assert.equal(second.causeTurnId, null);
+  assert.equal(second.reactionIntent, null);
+  assert.equal(second.defect, null);
+  const user = w.callsOf('question')[1].user;
+  assert.ok(user.includes('새 영역: 확장'));
+  assert.ok(user.includes('방향: 방향-문장'));
+  // 판정에는 장부만 간다. 답의 전문은 없다
+  const judgeUser = w.callsOf('endJudge')[0].user;
+  assert.ok(judgeUser.includes('여는 질문: 기본 질문입니다. -> 점수 mostly'));
+  assert.ok(!judgeUser.includes('답입니다.'));
+  assert.ok(judgeUser.includes('아직 안 물은 영역: scaling, memory, price'));
+  assert.deepEqual(w.launched, [[id, 1], [id, 2]]);
+});
+
+test('잘 앎이면 심화 꼬리질문 하나, 그 답 뒤에는 판정을 부른다', async () => {
+  const w = setup({ queues: { analyze: [SOLID] } });
+  const id = await begin(w);
+  await answer(w, id);
+  assert.equal(w.callsOf('endJudge').length, 0);
+  const [first, second] = w.store.readTurns(id);
+  assert.deepEqual(second.thread, { no: 1, role: 'follow', areaId: 'persist', followKind: 'deepen' });
+  assert.equal(second.interviewerId, first.interviewerId);
   assert.equal(second.causeTurnId, '01');
+  assert.equal(second.reactionIntent, 'B1');
+  assert.equal(second.defect.type, 'none');
+  assert.equal(second.defect.axis, 'durability');
+  assert.ok(!w.callsOf('question')[1].user.includes('새 영역'));
+  await answer(w, id);
+  assert.equal(w.callsOf('endJudge').length, 1);
+  assert.notEqual(w.store.readJudge(id, 2), null);
+  assert.deepEqual(threadOf(w, id, 3), { no: 2, role: 'open', areaId: 'scaling', followKind: null });
+});
+
+test('결함이 있으면 결함 꼬리질문 하나, 그 답이 또 틀려도 꼬리질문은 더 없다', async () => {
+  const w = setup({
+    queues: { analyze: [analysis({ score: 'unclear', defects: WRONG }), analysis({ score: 'wrong', defects: WRONG })] },
+  });
+  const id = await begin(w);
+  await answer(w, id);
+  const [first, second] = w.store.readTurns(id);
+  assert.deepEqual(second.thread, { no: 1, role: 'follow', areaId: 'persist', followKind: 'defect' });
   assert.equal(second.interviewerId, first.pick.interviewerId);
   assert.equal(second.reactionIntent, first.pick.reactionIntent);
   assert.deepEqual(second.defect, first.pick.defect);
-  assert.deepEqual(second.defect, { type: 'none', axis: 'durability', note: '' });
-  assert.deepEqual(w.launched, [[id, 1], [id, 2]]);
+  assert.equal(second.causeTurnId, '01');
+  await answer(w, id);
+  assert.equal(w.callsOf('endJudge').length, 1);
+  assert.deepEqual(threadOf(w, id, 3), { no: 2, role: 'open', areaId: 'scaling', followKind: null });
+  assert.ok(w.callsOf('endJudge')[0].user.includes('줄기 점수: wrong'));
+});
+
+test('전제 기술을 모른다고 하면 꼬리질문 없이 판정하고, 줄기 점수는 null', async () => {
+  const w = setup({ queues: { analyze: [analysis({ score: 'solid', unknownTechs: ['Memcached'] })] } });
+  const id = await begin(w);
+  await answer(w, id, 'Memcached는 모릅니다.');
+  assert.deepEqual(w.store.readTurns(id)[0].askedUnknown, ['Memcached']);
+  assert.equal(w.callsOf('endJudge').length, 1);
+  const judgeUser = w.callsOf('endJudge')[0].user;
+  assert.ok(judgeUser.includes('줄기 점수: 없음'));
+  assert.ok(judgeUser.includes('전제 기술을 모른다고'));
+  assert.equal(threadOf(w, id, 2).role, 'open');
+});
+
+test('이미 말한 기술을 모른다고 해도 전제 모름이 아니라 꼬리질문을 한다', async () => {
+  const w = setup({ queues: { analyze: [analysis({ score: 'solid', unknownTechs: ['Redis'] })] } });
+  const id = await begin(w);
+  await answer(w, id);
+  assert.deepEqual(w.store.readTurns(id)[0].askedUnknown, []);
+  assert.equal(w.callsOf('endJudge').length, 0);
+  assert.equal(threadOf(w, id, 2).followKind, 'deepen');
+});
+
+test('꼬리질문 답이 되묻기면 응답을 붙이고 줄기를 닫지 않는다', async () => {
+  const w = setup({ queues: { analyze: [SOLID, CLARIFY] } });
+  const id = await begin(w);
+  await answer(w, id);
+  const v = await answer(w, id, '어느 쪽을 말하나요?');
+  assert.equal(v.open.seq, 2);
+  assert.equal(v.open.clarifications.length, 1);
+  assert.equal(w.callsOf('endJudge').length, 0);
+  assert.equal(w.store.readJudge(id, 2), null);
+});
+
+test('판정이 enough여도 조건이 안 맞으면 계속한다', async () => {
+  const enough = judgment({ decision: 'enough', evidence: { knows: [1], applies: [1], learns: [1] }, nextArea: '', direction: '' });
+  const w = setup({ queues: { endJudge: [enough] } });
+  const id = await begin(w);
+  const v = await answer(w, id);
+  assert.equal(v.status, 'in_progress');
+  const { checked } = w.store.readJudge(id, 1);
+  assert.equal(checked.decision, 'continue');
+  assert.equal(checked.nextAreaId, 'scaling');
+  assert.ok(checked.failed.includes('knows'));
+  // 판정이 쓴 방향이 없으면 방향 없이 연다
+  assert.equal(threadOf(w, id, 2).areaId, 'scaling');
+  assert.ok(!w.callsOf('question')[1].user.includes('방향:'));
+});
+
+test('판정이 enough이고 조건이 맞으면 끝나고 end.by는 claude', async () => {
+  const signals = (...types) => types.map((type) => ({ type, quote: `${type} 인용` }));
+  const enough = judgment({ decision: 'enough', evidence: { knows: [1, 2], applies: [1, 2], learns: [1] }, nextArea: '', direction: '' });
+  const w = setup({
+    queues: {
+      analyze: [
+        analysis({ score: 'solid', signals: signals('practical', 'reasoning') }),
+        analysis(),
+        analysis({ score: 'solid', signals: signals('practical') }),
+        analysis(),
+      ],
+      endJudge: [judgment(), enough],
+    },
+  });
+  const id = await begin(w);
+  for (let i = 0; i < 3; i++) await answer(w, id);
+  const v = await answer(w, id);
+  assert.equal(v.status, 'finished');
+  assert.equal(v.open, null);
+  assert.equal(v.turnCount, 4);
+  assert.deepEqual(v.end, { by: 'claude', decision: 'enough', judgeSeq: 4 });
+  const s = w.store.readSession(id);
+  assert.deepEqual(s.end, { by: 'claude', decision: 'enough', judgeSeq: 4 });
+  assert.ok(s.finishedAt instanceof Date);
+  assert.equal(w.store.readJudge(id, 4).checked.decision, 'enough');
+  assert.equal(w.callsOf('question').length, 4);
+  assert.equal(w.svc.current(), null);
+});
+
+test('판정 호출이 실패하면 resume은 분석을 다시 하지 않고 판정부터 한다', async () => {
+  const w = setup({ queues: { endJudge: [new Error('boom')] } });
+  const id = await begin(w);
+  await assert.rejects(answer(w, id), /boom/);
+  assert.equal(w.store.readJudge(id, 1), null);
+  assert.equal(w.svc.view(id).pending, 'retry');
+  const v = await w.svc.resume(id);
+  assert.equal(v.turnCount, 2);
+  assert.equal(w.callsOf('analyze').length, 1);
+  assert.equal(w.callsOf('endJudge').length, 2);
+  assert.notEqual(w.store.readJudge(id, 1), null);
+});
+
+test('답이 "끝"이면(앞뒤 공백 포함) 끝나고 답으로 저장되지 않는다', async () => {
+  const w = setup();
+  const id = await begin(w);
+  const file = w.store.answerFile(id, 1, 1);
+  fs.writeFileSync(file, ' 끝\n');
+  const v = await w.svc.submitAnswer(id, ' 끝\n', file);
+  assert.equal(v.status, 'finished');
+  assert.deepEqual(v.end, { by: 'user' });
+  assert.equal(w.store.readTurns(id)[0].answer, null);
+  assert.equal(fs.existsSync(file), false);
+  assert.equal(w.callsOf('analyze').length, 0);
+  assert.deepEqual(w.store.readSession(id).end, { by: 'user' });
+});
+
+test('"끝내 주세요"는 답이다', async () => {
+  const w = setup();
+  const id = await begin(w);
+  const v = await answer(w, id, '끝내 주세요');
+  assert.equal(v.status, 'in_progress');
+  assert.equal(w.store.readTurns(id)[0].answer, '끝내 주세요');
+  assert.equal(v.turnCount, 2);
+});
+
+test('질문이 questionCap에 닿으면 capPending이고 다음 질문을 만들지 않는다. resume도 아무것도 하지 않는다', async () => {
+  const w = setup({ configPatch: { questionCap: 2 } });
+  const id = await begin(w);
+  await answer(w, id);
+  const v = await answer(w, id);
+  assert.equal(v.status, 'in_progress');
+  assert.equal(v.capPending, true);
+  assert.equal(v.open, null);
+  assert.equal(v.turnCount, 2);
+  assert.equal(w.callsOf('question').length, 2);
+  assert.equal(w.callsOf('endJudge').length, 2);
+  assert.equal(w.store.readSession(id).capPending, true);
+  const before = w.fake.calls.length;
+  const again = await w.svc.resume(id);
+  assert.equal(w.fake.calls.length, before);
+  assert.equal(again.capPending, true);
+});
+
+test('continueAfterCap은 상한을 30 늘리고 다음 줄기를 연다', async () => {
+  const w = setup({ configPatch: { questionCap: 2 }, queues: { endJudge: [judgment(), judgment({ nextArea: 'price' })] } });
+  const id = await begin(w);
+  await answer(w, id);
+  await answer(w, id);
+  const v = await w.svc.continueAfterCap(id);
+  assert.equal(v.capPending, false);
+  assert.equal(v.turnCount, 3);
+  assert.equal(v.open.seq, 3);
+  const s = w.store.readSession(id);
+  assert.equal(s.questionCap, 32);
+  assert.equal(s.capPending, false);
+  // 판정은 다시 부르지 않고 저장된 판정의 다음 영역을 쓴다
+  assert.equal(w.callsOf('endJudge').length, 2);
+  assert.equal(threadOf(w, id, 3).areaId, 'price');
+});
+
+test('꼬리질문도 상한을 넘으면 만들지 않고, 이어 하면 꼬리질문을 한다', async () => {
+  const w = setup({ configPatch: { questionCap: 1 }, queues: { analyze: [SOLID] } });
+  const id = await begin(w);
+  const v = await answer(w, id);
+  assert.equal(v.capPending, true);
+  assert.equal(w.callsOf('endJudge').length, 0);
+  await w.svc.continueAfterCap(id);
+  assert.equal(threadOf(w, id, 2).followKind, 'deepen');
+});
+
+test('topicMap이 없는 진행 중 면접에 answer와 resume은 legacy_interview, "끝"과 finish는 된다', async () => {
+  const w = setup();
+  const id = await begin(w);
+  const { topicMap: _drop, ...legacy } = w.store.readSession(id);
+  w.store.writeSession(id, legacy);
+  await assert.rejects(answer(w, id), { code: 'legacy_interview' });
+  await assert.rejects(w.svc.resume(id), { code: 'legacy_interview' });
+  assert.equal(w.store.readTurns(id)[0].answer, null);
+  assert.equal((await w.svc.finish(id)).status, 'finished');
+
+  const w2 = setup();
+  const id2 = await begin(w2);
+  const { topicMap: _drop2, ...legacy2 } = w2.store.readSession(id2);
+  w2.store.writeSession(id2, legacy2);
+  assert.equal((await answer(w2, id2, '끝')).status, 'finished');
 });
 
 test('세션을 쓰고 answer.json을 쓰기 전에 죽어도 다시 분석한 결과가 같다', async () => {
@@ -240,23 +495,10 @@ test('질문 생성이 실패한 뒤 resume은 분석을 다시 하지 않고, �
   const v = await w.svc.resume(id);
   assert.equal(v.turnCount, 2);
   assert.equal(w.callsOf('analyze').length, 1);
+  assert.equal(w.callsOf('endJudge').length, 1);
   const s = w.store.readSession(id);
   assert.deepEqual(s.userMentioned, ['Redis', 'Sentinel']);
   assert.deepEqual(s.unknownTechs, ['Memcached']);
-});
-
-test('secondary가 있는 답 뒤에 질문 생성이 한 번 실패해도, 다시 하면 primary가 먼저 묻는다', async () => {
-  const w = setup({ queues: { analyze: [WITH_SECONDARY], question: [plain(), new Error('boom')] } });
-  const id = await begin(w);
-  await assert.rejects(answer(w, id), /boom/);
-  assert.equal(w.store.readTurns(id).length, 1);
-  assert.equal(w.store.readTurns(id).at(-1).pendingSecondary, null);
-  await w.svc.resume(id);
-  const second = w.store.readTurns(id)[1];
-  assert.equal(second.addOn, false);
-  assert.equal(second.interviewerId, 'p1');
-  assert.equal(second.pendingSecondary.causeTurnId, '01');
-  assert.equal(second.pendingSecondary.choice.interviewerId, 'p3');
 });
 
 test('답이 저장된 턴에 submitAnswer를 다시 부르면 답을 바꾸지 않고 이어 간다', async () => {
@@ -417,36 +659,6 @@ test('검증이 정답지를 고치면 분석은 고친 정답지를 받는다',
   assert.equal(w.store.readTurns(id)[0].prepared.answerKeyCorrected, true);
 });
 
-test('덧붙이기: secondary가 있으면 다음 질문 뒤에 다른 면접관이 addOn으로 묻는다', async () => {
-  const w = setup({ queues: { analyze: [WITH_SECONDARY] } });
-  const id = await begin(w);
-  const second = await answer(w, id);
-  assert.equal(second.open.addOn, false);
-  const third = await answer(w, id);
-  assert.equal(third.open.seq, 3);
-  assert.equal(third.open.addOn, true);
-  assert.equal(third.open.roleName, '시나리오형');
-  const t3 = w.store.readTurns(id)[2];
-  assert.equal(t3.addOn, true);
-  assert.equal(t3.interviewerId, 'p3');
-  assert.equal(t3.causeTurnId, '01');
-  assert.equal(t3.pendingSecondary, null);
-  assert.ok(!w.callsOf('question').at(-1).user.includes('덧붙이는 질문'));
-});
-
-test('덧붙이기가 기다리는데 지원자가 모른다고 하면 덧붙이기를 버리고 같은 면접관이 넘어간다', async () => {
-  const w = setup({ queues: { analyze: [WITH_SECONDARY, analysis({ unknownTechs: ['Memcached'] })] } });
-  const id = await begin(w);
-  await answer(w, id);
-  await answer(w, id, 'Memcached는 모르겠습니다.');
-  const [, t2, t3] = w.store.readTurns(id);
-  assert.equal(t3.addOn, false);
-  assert.equal(t3.interviewerId, t2.interviewerId);
-  assert.equal(t3.reactionIntent, 'B11');
-  assert.equal(t3.causeTurnId, '02');
-  assert.equal(t3.pendingSecondary, null);
-});
-
 test('모른다고 한 기술은 쌓여 이후 질문에 실린다. 스스로 꺼낸 모름도 쌓이고 말한 기술에는 들어가지 않는다', async () => {
   const w = setup({
     queues: {
@@ -468,34 +680,6 @@ test('모른다고 한 기술은 쌓여 이후 질문에 실린다. 스스로 �
   assert.ok(w.callsOf('question').at(-1).user.includes(`${line}: Memcached, Patroni`));
 });
 
-test('절반을 넘도록 가정 변경이 없으면 정체성 비교 축을 지정한다', async () => {
-  const w = setup();
-  const id = await begin(w, { questionLimit: 4 });
-  await answer(w, id);
-  assert.ok(!w.callsOf('question').at(-1).user.includes('identity_swap'));
-  await answer(w, id);
-  assert.ok(w.callsOf('question').at(-1).user.includes('새 영역: '));
-  assert.equal(w.store.readTurns(id)[2].targetAxis, 'identity_swap');
-});
-
-test('질문 수에 닿으면 마지막 답을 분석하고 끝낸다', async () => {
-  const w = setup();
-  const id = await begin(w, { questionLimit: 2 });
-  await answer(w, id);
-  const v = await answer(w, id);
-  assert.equal(v.status, 'finished');
-  assert.equal(v.closing, CLOSING_TEXT);
-  assert.equal(v.open, null);
-  assert.equal(v.pending, null);
-  assert.equal(v.turnCount, 2);
-  assert.equal(w.callsOf('analyze').length, 2);
-  assert.notEqual(w.store.readTurns(id)[1].analysis, null);
-  const s = w.store.readSession(id);
-  assert.equal(s.status, 'finished');
-  assert.ok(s.finishedAt instanceof Date);
-  assert.equal(w.svc.current(), null);
-});
-
 test('끝난 면접에 온 답은 finished 오류', async () => {
   const w = setup();
   const id = await begin(w);
@@ -512,6 +696,7 @@ test('finish는 답이 없는 턴이 있어도 끝낸다', async () => {
   assert.equal(v.closing, CLOSING_TEXT);
   assert.equal(v.open, null);
   assert.equal(w.store.readTurns(id)[0].answer, null);
+  assert.deepEqual(v.end, { by: 'user' });
   const finishedAt = w.store.readSession(id).finishedAt;
   assert.ok(finishedAt instanceof Date);
   assert.equal((await w.svc.finish(id)).status, 'finished');
@@ -553,6 +738,6 @@ test('view에 숨길 값이 없다', async () => {
     const json = JSON.stringify(v);
     for (const h of hidden) assert.ok(!json.includes(h), `${h}가 view에 있다`);
   }
-  assert.deepEqual(Object.keys(views[1]).sort(), ['closing', 'id', 'open', 'pending', 'questionLimit', 'status', 'topic', 'turnCount']);
-  assert.deepEqual(Object.keys(views[1].open).sort(), ['addOn', 'clarifications', 'inputNo', 'roleName', 'seq', 'text']);
+  assert.deepEqual(Object.keys(views[1]).sort(), ['capPending', 'closing', 'end', 'id', 'open', 'pending', 'status', 'topic', 'turnCount']);
+  assert.deepEqual(Object.keys(views[1].open).sort(), ['clarifications', 'inputNo', 'roleName', 'seq', 'text']);
 });

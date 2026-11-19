@@ -80,7 +80,9 @@ export function openStore(dataDir) {
         sessionId: id,
         seq,
         interviewerId: q.interviewerId,
-        addOn: q.addOn,
+        thread: q.thread ?? null,
+        // 예전 턴에만 있는 필드(덧붙임, 지정 축, 기다리는 덧붙임). 새 턴은 쓰지 않는다.
+        addOn: q.addOn ?? false,
         causeTurnId: q.causeTurnId,
         reactionIntent: q.reactionIntent,
         defect: q.defect,
@@ -94,6 +96,7 @@ export function openStore(dataDir) {
         answeredAt: toDate(a?.answeredAt),
         analysis: a?.analysis ?? null,
         pick: a?.pick ?? null,
+        askedUnknown: a?.askedUnknown ?? null,
         surprise: r?.surprise ?? null,
         review: r?.review ?? null,
         createdAt: toDate(q.createdAt),
@@ -154,6 +157,13 @@ export function openStore(dataDir) {
     },
     writeKey(id, seq, key) {
       writeTurnFile(id, seq, 'key.json', key);
+    },
+
+    readJudge(id, seq) {
+      return readJsonIfExists(turnFile(id, seq, 'judge.json'));
+    },
+    writeJudge(id, seq, judge) {
+      writeTurnFile(id, seq, 'judge.json', judge);
     },
 
     acquireKeyLock(id, seq, staleMs) {

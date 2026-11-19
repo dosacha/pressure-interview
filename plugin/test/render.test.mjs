@@ -12,8 +12,8 @@ import {
 import { analysis, key, panel, review } from './helpers.mjs';
 
 test('sayQuestion과 sayClarify의 꼴', () => {
-  const view = { questionLimit: 6, open: { seq: 2, roleName: 'DBA', text: '왜 그렇게 했나요?' } };
-  assert.equal(sayQuestion(view), '**질문 2/6 · DBA 면접관**\n\n왜 그렇게 했나요?');
+  const view = { open: { seq: 2, roleName: 'DBA', text: '왜 그렇게 했나요?' } };
+  assert.equal(sayQuestion(view), '**질문 2 · DBA 면접관**\n\n왜 그렇게 했나요?');
   assert.equal(sayClarify(view, '한 대의 서버입니다.'), '**DBA 면접관**\n\n한 대의 서버입니다.');
 });
 

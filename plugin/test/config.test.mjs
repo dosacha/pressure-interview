@@ -28,7 +28,8 @@ test('저장한 값에 기본값이 합쳐진다', () => {
   const loaded = loadConfig(env);
   assert.deepEqual(saved, loaded);
   assert.equal(loaded.dataDir, 'D:/x');
-  assert.equal(loaded.questionLimit, 6);
+  assert.equal(loaded.questionCap, 30);
+  assert.equal('questionLimit' in loaded, false);
   assert.deepEqual(loaded.calls.leak, { model: 'haiku', effort: 'low' });
   assert.deepEqual(loaded.calls.review, { model: 'opus', effort: 'high' });
 });
@@ -36,8 +37,8 @@ test('저장한 값에 기본값이 합쳐진다', () => {
 test('값이 틀리면 bad_config', () => {
   const { env } = setup();
   const cases = [
-    { questionLimit: 1 },
-    { questionLimit: 31 },
+    { questionCap: 0 },
+    { questionCap: 1.5 },
     { claudeCommand: 'claude' },
     { claudeCommand: [] },
     { calls: { leak: { effort: 'fast' } } },
@@ -47,6 +48,14 @@ test('값이 틀리면 bad_config', () => {
     writeRaw(env, bad);
     assert.throws(() => loadConfig(env), (e) => e.code === 'bad_config', JSON.stringify(bad));
   }
+});
+
+test('config: questionLimit가 있어도 오류가 없고 questionCap 기본 30', () => {
+  const { env } = setup();
+  writeRaw(env, { dataDir: 'D:/x', questionLimit: 99 });
+  const loaded = loadConfig(env);
+  assert.equal(loaded.questionCap, 30);
+  assert.equal('questionLimit' in loaded, false);
 });
 
 test('깨진 JSON이면 bad_config', () => {

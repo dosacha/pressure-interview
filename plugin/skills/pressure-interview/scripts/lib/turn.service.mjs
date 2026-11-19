@@ -211,7 +211,7 @@ export class TurnService {
     const mentioned = analysis.mentionedTechs.filter((t) => !unknown.has(normalize(t)));
     const userMentioned = [...new Set([...input.userMentioned, ...mentioned])];
     if (analysis.kind === 'clarify')
-      return { analysis, pick: null, userMentioned, usage: [usage], unknownTechs };
+      return { analysis, pick: null, userMentioned, usage: [usage], unknownTechs, askedUnknown };
 
     const questionAxis = input.question.assumption.axis;
     const axis = OWNABLE_AXES.find((a) => a === questionAxis) ?? ROLES[asker.role].axes[0];
@@ -229,6 +229,7 @@ export class TurnService {
         userMentioned,
         usage: [usage],
         unknownTechs,
+        askedUnknown,
       };
     }
     const defects =
@@ -239,6 +240,6 @@ export class TurnService {
       history: input.history,
       maxConsecutive: this.config.maxConsecutive,
     });
-    return { analysis, pick, userMentioned, usage: [usage], unknownTechs };
+    return { analysis, pick, userMentioned, usage: [usage], unknownTechs, askedUnknown };
   }
 }

@@ -96,11 +96,11 @@ test('뒤 작업이 실패해도 앞 명령의 출력에 표식이 없다', asyn
 });
 
 test('끝난 뒤에는 review.md에 표식이 있다', () => {
-  const w = makeWorld({ questionLimit: 2 });
+  const w = makeWorld();
   stock(w.fakeDir, marked());
   const s = run(w, ['start', '--topic', 'Redis']);
   const a1 = answer(w, s.json, '첫 답');
-  answer(w, a1.json, '둘째 답');
+  answer(w, a1.json, '끝');
   const rv = run(w, ['review']);
   assert.equal(rv.json.kind, 'review_ready', rv.stdout);
   assert.ok(fs.readFileSync(rv.json.paths.review, 'utf8').includes(M));

@@ -102,6 +102,26 @@ test('턴을 파일들에서 합친다', () => {
   assert.equal(t.answer, '답');
 });
 
+test('store: thread 필드와 judge.json을 읽고 쓴다', () => {
+  const { store, id } = setup();
+  store.writeQuestion(id, 1, question());
+  let [t] = store.readTurns(id);
+  // 예전 턴에는 thread와 askedUnknown이 없다
+  assert.equal(t.thread, null);
+  assert.equal(t.askedUnknown, null);
+  const thread = { no: 2, role: 'follow', areaId: 'persist', followKind: 'deepen' };
+  store.writeQuestion(id, 1, question({ thread }));
+  store.writeAnswer(id, 1, { answer: '답', answeredAt: null, clarifications: [], analysis: null, pick: null, askedUnknown: ['Raft'] });
+  [t] = store.readTurns(id);
+  assert.deepEqual(t.thread, thread);
+  assert.deepEqual(t.askedUnknown, ['Raft']);
+
+  assert.equal(store.readJudge(id, 1), null);
+  const judge = { judgment: { decision: 'continue' }, checked: { decision: 'continue', nextAreaId: 'a2', failed: [] }, at: '2026-11-19T00:00:00.000Z' };
+  store.writeJudge(id, 1, judge);
+  assert.deepEqual(store.readJudge(id, 1), judge);
+});
+
 test('쓰다 만 임시 파일은 읽지 않는다', () => {
   const { dir, store, id } = setup();
   const turn = path.join(dir, 'interviews', id, 'hidden', 'turns', '01');

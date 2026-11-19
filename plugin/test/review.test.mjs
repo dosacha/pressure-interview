@@ -8,18 +8,13 @@ import { DEFAULTS } from '../skills/pressure-interview/scripts/lib/config.mjs';
 import { createInterviewService } from '../skills/pressure-interview/scripts/lib/interview.mjs';
 import { createReviewService, syncMemory } from '../skills/pressure-interview/scripts/lib/review.mjs';
 import { openStore } from '../skills/pressure-interview/scripts/lib/store.mjs';
-import { analysis, draft, fakeLlm, key, review } from './helpers.mjs';
+import { analysis, draft, fakeLlm, judgment, key, review, topicMap } from './helpers.mjs';
 
 const plain = (text = '기본 질문입니다.') => draft({ text, assumption: { axis: 'none', statement: '' } });
 const swap = (text, statement = 'PostgreSQL이 디스크 없이 동작') => draft({ text, assumption: { axis: 'identity_swap', statement } });
 const result = (r, sameAs = null) => review({ assumption: { result: r, note: '', sameAs } });
 const NO_CORRECTIONS = { premiseOk: true, problems: [], corrections: { lists: [], alternatives: { changed: false, items: [] } } };
-const WITH_SECONDARY = analysis({
-  defects: [
-    { type: 'wrong', axis: 'durability', note: 'n1' },
-    { type: 'missing_axis', axis: 'scale', note: 'n2' },
-  ],
-});
+const WITH_DEFECT = analysis({ score: 'unclear', defects: [{ type: 'wrong', axis: 'durability', note: 'n1' }] });
 const DEFAULT_REPLIES = {
   jobRole: { role: 'dba' },
   question: plain(),
@@ -30,6 +25,8 @@ const DEFAULT_REPLIES = {
   analyze: analysis(),
   clarify: { reply: '범위는 한 대의 서버입니다.' },
   review: review(),
+  topicMap: topicMap(),
+  endJudge: judgment(),
 };
 const NOW = new Date('2030-01-01T00:00:00.000Z');
 
@@ -52,11 +49,14 @@ function setup({ now = () => NOW } = {}) {
   return { dataDir, store, config, fake, interviews, reviews, queue, callsOf };
 }
 
-// 질문 수 상한까지 모두 답해 끝낸다.
-async function play(w, { topic = 'Redis', questionLimit = 2 } = {}) {
-  const { id } = await w.interviews.start({ topic, questionLimit });
-  for (let i = 0; i < questionLimit; i++) await w.interviews.submitAnswer(id, `답-${i + 1}`);
-  assert.equal(w.store.readSession(id).status, 'finished');
+// 질문 count개에 모두 답하고 끝낸다. 상한을 count로 두어 그 뒤 질문을 만들지 않게 한다.
+async function play(w, { topic = 'Redis', count = 2 } = {}) {
+  w.config.questionCap = count;
+  const { id } = await w.interviews.start({ topic });
+  for (let i = 0; i < count; i++) await w.interviews.submitAnswer(id, `답-${i + 1}`);
+  assert.equal(w.store.readSession(id).capPending, true);
+  await w.interviews.finish(id);
+  assert.equal(w.store.readTurns(id).length, count);
   return id;
 }
 
@@ -110,7 +110,7 @@ test('일부 턴이 실패하면 문서를 쓰지 않고, 다시 부르면 그 �
 
 test('분석 없이 남은 답은 대상이 아니다', async () => {
   const w = setup();
-  const { id } = await w.interviews.start({ topic: 'Redis', questionLimit: 3 });
+  const { id } = await w.interviews.start({ topic: 'Redis' });
   await w.interviews.submitAnswer(id, '답-1');
   w.queue('analyze', new Error('boom'));
   await assert.rejects(w.interviews.submitAnswer(id, '답-2'), /boom/);
@@ -133,22 +133,22 @@ test('같은 축의 앞선 가정을 알려 준다', async () => {
   assert.equal(first.user.includes('key turn:'), false);
 });
 
-test('덧붙이기가 낀 면접에서 이 답에서 나온 질문을 원인 턴으로 짝짓는다', async () => {
+test('꼬리질문을 여는 질문의 턴으로 짝짓고, 다음 줄기의 여는 질문은 후속 질문이 아니다', async () => {
   const w = setup();
   w.queue('question', plain('질문-1-끝'), plain('질문-2-끝'), plain('질문-3-끝'));
-  w.queue('analyze', WITH_SECONDARY);
-  const id = await play(w, { questionLimit: 3 });
+  w.queue('analyze', WITH_DEFECT);
+  const id = await play(w, { count: 3 });
   const turns = w.store.readTurns(id);
-  assert.deepEqual(turns.map((t) => [t.seq, t.addOn, t.causeTurnId]), [
-    [1, false, null],
-    [2, false, '01'],
-    [3, true, '01'],
+  assert.deepEqual(turns.map((t) => [t.seq, t.thread.role, t.causeTurnId]), [
+    [1, 'open', null],
+    [2, 'follow', '01'],
+    [3, 'open', null],
   ]);
   await w.reviews.run(id);
   const calls = w.callsOf('review');
   const cause = calls.find((c) => c.user.includes('질문 문장: 질문-1-끝'));
   assert.ok(cause.user.includes('질문-2-끝'));
-  assert.ok(cause.user.includes('질문-3-끝'));
+  assert.equal(cause.user.includes('질문-3-끝'), false);
   const middle = calls.find((c) => c.user.includes('질문 문장: 질문-2-끝'));
   assert.equal(middle.user.includes('질문-3-끝'), false);
 });
@@ -210,7 +210,7 @@ test('한 면접 안의 같은 가정은 묶이고 마지막 답의 결과를 �
   const w = setup();
   w.queue('question', plain('질문-1'), swap('가정질문-2'), swap('가정질문-3', '같은 뜻'));
   w.queue('review', review(), result('wobbly'), result('well', 'turn:02'));
-  const id = await play(w, { questionLimit: 3 });
+  const id = await play(w, { count: 3 });
   await w.reviews.run(id);
   const records = w.store.readMemory();
   assert.equal(records.length, 1);

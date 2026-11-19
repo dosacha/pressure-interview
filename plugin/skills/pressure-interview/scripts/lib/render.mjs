@@ -23,7 +23,7 @@ const intentText = (i) => `${i.group} · ${i.name}`;
 const withNote = (text, note) => (note ? `${text} · ${note}` : text);
 
 export const sayQuestion = (view) =>
-  `**질문 ${view.open.seq}/${view.questionLimit} · ${view.open.roleName} 면접관**\n\n${view.open.text}`;
+  `**질문 ${view.open.seq} · ${view.open.roleName} 면접관**\n\n${view.open.text}`;
 
 export const sayClarify = (view, reply) => `**${view.open.roleName} 면접관**\n\n${reply}`;
 

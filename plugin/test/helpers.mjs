@@ -98,6 +98,24 @@ export const review = (over = {}) => ({
   keyProblems: [],
   ...over,
 });
+// 핵심 둘(축 durability는 DBA, scale은 시나리오형이 맡는다), 주변 둘.
+export const topicMap = () => ({
+  areas: [
+    { id: 'persist', name: '영속성', core: true, why: '왜', axis: 'durability', angles: ['각도'] },
+    { id: 'scaling', name: '확장', core: true, why: '왜', axis: 'scale', angles: ['각도'] },
+    { id: 'memory', name: '메모리', core: false, why: '왜', axis: 'cs_premise', angles: ['각도'] },
+    { id: 'price', name: '비용', core: false, why: '왜', axis: 'cost', angles: ['각도'] },
+  ],
+});
+export const judgment = (over = {}) => ({
+  decision: 'continue',
+  evidence: { knows: [], applies: [], learns: [] },
+  candidates: [],
+  nextArea: 'scaling',
+  direction: '방향-문장',
+  note: '까닭',
+  ...over,
+});
 const NO_CORRECTIONS = { premiseOk: true, problems: [], corrections: { lists: [], alternatives: { changed: false, items: [] } } };
 // 가짜 실행기에 쌓을 종류별 성공 응답.
 export const replies = (over = {}) => ({
@@ -110,6 +128,8 @@ export const replies = (over = {}) => ({
   analyze: analysis(),
   clarify: { reply: '범위는 한 대의 서버입니다.' },
   review: review(),
+  topicMap: topicMap(),
+  endJudge: judgment(),
   ...over,
 });
 export const panel = () => [

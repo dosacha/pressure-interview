@@ -88,7 +88,7 @@ test('start는 질문을 낸다', () => {
   assert.equal(r.stdout, `${JSON.stringify(r.json)}\n`);
   assert.equal(r.json.ok, true);
   assert.equal(r.json.kind, 'question');
-  assert.ok(r.json.say.startsWith('**질문 1/6 · '), r.json.say);
+  assert.ok(r.json.say.startsWith('**질문 1 · '), r.json.say);
   assert.ok(r.json.answerFile.endsWith('/answers/01-1.txt'), r.json.answerFile);
   assert.equal(typeof r.json.interview, 'string');
 });
@@ -113,10 +113,11 @@ test('답은 글자 그대로 저장된다', () => {
   const w = world();
   const s = start(w);
   const id = s.json.interview;
-  const a1 = answer(w, s.json, '끝');
+  // 정확히 "끝"이 아니면 답이다
+  const a1 = answer(w, s.json, '끝내 주세요');
   assert.equal(a1.json.kind, 'question');
-  assert.ok(a1.json.say.startsWith('**질문 2/6 · '));
-  assert.equal(savedAnswer(w, id, 1), '끝');
+  assert.ok(a1.json.say.startsWith('**질문 2 · '));
+  assert.equal(savedAnswer(w, id, 1), '끝내 주세요');
   assert.equal(fs.existsSync(s.json.answerFile), false);
   const a2 = answer(w, a1.json, '가\r\n나');
   assert.equal(a2.json.kind, 'question');
@@ -136,13 +137,15 @@ test('resume은 열린 질문과 같은 answerFile을 다시 준다', async () =
   assert.equal(modelCalls(w).length, before);
 });
 
-test('한 판: 질문 둘, 끝, 복기, 고침, 표시, 추이', () => {
-  const w = world({ questionLimit: 2 });
+test('한 판: 답 하나, 끝, 복기, 고침, 표시, 추이', async () => {
+  const w = world();
   const s = start(w);
   const id = s.json.interview;
   const a1 = answer(w, s.json, '첫 답입니다.');
   assert.equal(a1.json.kind, 'question');
-  const a2 = answer(w, a1.json, '둘째 답입니다.');
+  const a2 = answer(w, a1.json, '끝');
+  // 답하지 않은 둘째 질문의 정답지 뒤 작업이 끝나야 호출 수가 멈춘다
+  assert.ok(await waitFor(() => fs.existsSync(turnFile(w, id, 2, 'key.json'))));
   assert.equal(a2.json.kind, 'finished');
   assert.ok(a2.json.say.includes(CLOSING_TEXT));
   assert.equal(a2.json.answerFile, undefined);
@@ -151,7 +154,7 @@ test('한 판: 질문 둘, 끝, 복기, 고침, 표시, 추이', () => {
   assert.equal(rv.json.kind, 'review_ready', rv.stdout);
   assert.equal(rv.json.interview, id);
   assert.ok(fs.existsSync(rv.json.paths.review));
-  assert.equal(run(w, ['mark', '2', 'well']).json.kind, 'marked');
+  assert.equal(run(w, ['mark', '1', 'well']).json.kind, 'marked');
   assert.equal(run(w, ['surprise', '1', 'unexpected', id]).json.kind, 'marked');
   const st = run(w, ['stats']);
   assert.equal(st.json.kind, 'stats');
@@ -165,10 +168,12 @@ test('한 판: 질문 둘, 끝, 복기, 고침, 표시, 추이', () => {
   assert.equal(rows.filter((r) => r.type === undefined).length, modelCalls(w).length);
 });
 
-test('끝난 뒤 복기 전의 resume은 끝낼 때의 출력을 다시 준다', () => {
-  const w = world({ questionLimit: 2 });
+test('끝난 뒤 복기 전의 resume은 끝낼 때의 출력을 다시 준다', async () => {
+  const w = world();
   const s = start(w);
-  const done = answer(w, answer(w, s.json, '첫 답').json, '마지막 답');
+  const done = answer(w, answer(w, s.json, '첫 답').json, '끝');
+  // 답하지 않은 둘째 질문의 정답지 뒤 작업이 끝나야 호출 수가 멈춘다
+  assert.ok(await waitFor(() => fs.existsSync(turnFile(w, s.json.interview, 2, 'key.json'))));
   assert.equal(done.json.kind, 'finished');
   const before = fakeCalls(w.fakeDir).length;
   const r = run(w, ['resume']);
@@ -268,7 +273,7 @@ test('실패한 뒤 resume이 이어 간다', () => {
   assert.ok(a.json.next.includes('resume을 실행한다'), a.json.next);
   const r = run(w, ['resume']);
   assert.equal(r.json.kind, 'question');
-  assert.ok(r.json.say.startsWith('**질문 2/6 · '));
+  assert.ok(r.json.say.startsWith('**질문 2 · '));
   assert.equal(savedAnswer(w, id, 1), '한 번만 넣는 답');
   assert.equal(modelCalls(w).filter((c) => c.kind === 'analyze').length, 2);
 });
