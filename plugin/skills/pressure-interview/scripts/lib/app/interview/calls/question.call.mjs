@@ -245,8 +245,10 @@ assumption.statement에는 바뀐 가정을 기술 이름 없이 한 문장으�
   }
   if (opening) {
     const { area, direction } = opening;
+    const angles = area.angles ?? [];
     turn.push(
       `- 새 영역: ${area.name}. 이 영역을 ${area.axis} ${axisName(area.axis)} 축의 가정을 바꿔 연다.${direction ? ` 방향: ${direction}` : ''}`,
+      ...(angles.length > 0 ? [`- 허를 찌를 방향 후보: ${angles.join(' / ')}`] : []),
       '- 여는 질문은 교과서 정의를 묻지 않는다. 가정을 바꿔 무엇이 사라지고 무엇이 남는지 묻는다.',
     );
   }

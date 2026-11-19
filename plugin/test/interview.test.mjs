@@ -264,6 +264,16 @@ test('판정이 enough여도 조건이 안 맞으면 계속한다', async () => 
   assert.ok(!w.callsOf('question')[1].user.includes('방향:'));
 });
 
+test('판정이 고른 영역이 지도에 없어 코드가 바꾸면 판정의 방향은 버린다', async () => {
+  const w = setup({ queues: { endJudge: [judgment({ nextArea: 'nonexistent', direction: '판정이쓴방향' })] } });
+  const id = await begin(w);
+  await answer(w, id);
+  assert.equal(threadOf(w, id, 2).areaId, 'scaling');
+  const user = w.callsOf('question')[1].user;
+  assert.ok(!user.includes('방향:'));
+  assert.ok(!user.includes('판정이쓴방향'));
+});
+
 test('판정이 enough이고 조건이 맞으면 끝나고 end.by는 claude', async () => {
   const signals = (...types) => types.map((type) => ({ type, quote: `${type} 인용` }));
   const enough = judgment({ decision: 'enough', evidence: { knows: [1, 2], applies: [1, 2], learns: [1] }, nextArea: '', direction: '' });

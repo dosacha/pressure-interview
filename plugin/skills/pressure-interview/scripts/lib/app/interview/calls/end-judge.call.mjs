@@ -101,7 +101,7 @@ evidence에 기준마다 충족한 근거 줄기 번호를 knows, applies, learn
 끝낼 때(enough, exhausted, settled)는 nextArea와 direction을 빈 문자열로 둔다. continue일 때 evidence는 세 배열 모두 비우고 candidates도 비운다. note에는 이 판정의 까닭을 한두 문장으로 쓴다. 복기에서 지원자가 읽는다.`;
 
   const areas = topicMap.areas
-    .map((a) => `- ${a.id} ${a.name} (${a.core ? '핵심' : '주변'}): ${a.why}`)
+    .map((a) => `- ${a.id} ${a.name} (${a.core ? '핵심' : '주변'}): ${a.why}${a.angles?.length ? ` / 방향 후보: ${a.angles.join(' / ')}` : ''}`)
     .join('\n');
   const user = [
     `주제: ${topic}`,

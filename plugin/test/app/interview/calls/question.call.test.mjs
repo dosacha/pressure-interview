@@ -104,6 +104,11 @@ describe('question.call', () => {
     expect(user).toContain('교과서 정의를 묻지 않는다');
     expect(user).not.toContain('반응 의도');
   });
+  it('주제 지도의 angles를 허를 찌를 방향 후보로 싣는다', () => {
+    const opening = { area: { name: 'Redis', axis: 'durability', angles: ['각도가나', '각도다라'] }, direction: '' };
+    const { user } = buildQuestionPrompt({ ...input, reactionIntent: null, defect: null, opening });
+    expect(user).toContain('허를 찌를 방향 후보: 각도가나 / 각도다라');
+  });
   it('첫 질문도 여는 질문이라 기본 질문으로 시작해도 된다가 없다', () => {
     const opening = { area: { name: 'Redis', axis: 'durability', angles: [] }, direction: '' };
     const { user } = buildQuestionPrompt({

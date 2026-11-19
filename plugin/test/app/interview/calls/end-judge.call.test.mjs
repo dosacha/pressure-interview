@@ -31,6 +31,11 @@ test('판정 프롬프트가 네 판정과 기준을 싣는다', () => {
   assert.match(system, /offTopic: 주제에서 벗어난 다른 기술의 지식을 시험하게 된다/);
 });
 
+test('판정 user 메시지의 영역 줄에 angles가 있다', () => {
+  const { user } = buildEndJudgePrompt({ ...input, topicMap: { areas: [{ ...topicMap.areas[0], angles: ['각도표식ZZ', '둘째'] }, topicMap.areas[1]] } });
+  assert.match(user, /각도표식ZZ/);
+});
+
 test('판정 user 메시지에 답의 전문이 없고 점수와 인용은 있다', () => {
   const full = '답의전문표식ZZZ';
   const { user } = buildEndJudgePrompt({ ...input, ledger: [{ ...ledger[0], answer: full, openAnswer: full }] });
