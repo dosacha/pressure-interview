@@ -1,6 +1,6 @@
 # 설계: 넓게 묻고 스스로 끝내는 면접 (스킬)
 
-- 작성: 2026-11-19
+- 작성: 2026-11-19 (사용자 승인 2026-11-19, 원문 "승인")
 - 대상: 스킬 `/pressure-interview` (`plugin/skills/pressure-interview/`)
 - 브랜치: `feat/breadth-and-ending` (`main` `0d8e26f`에서 냄)
 - 앞선 설계: [`2026-11-18-pressure-interview-skill-design.md`](2026-11-18-pressure-interview-skill-design.md), 면접 규칙의 바탕은 [`2026-11-16-pressure-interview-design.md`](2026-11-16-pressure-interview-design.md)
