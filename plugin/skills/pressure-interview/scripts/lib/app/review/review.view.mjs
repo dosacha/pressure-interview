@@ -178,10 +178,11 @@ function endingViews(session, turns, judgment) {
     return {
       name: a.name,
       core: a.core,
-      asked: status[a.id].asked,
+      // 꼬리질문 전에 끝나 줄기가 안 닫혀도 첫 답이 분석됐으면 물은 영역이다.
+      asked: status[a.id].asked || mine.some((t) => t.openScore !== null),
       score: nonNull(mine.map((t) => t.score)),
       reviewedScore: nonNull(reviewed.filter((t) => t.areaId === a.id).map((t) => t.score)),
-      signals: mine.flatMap((t) => t.signals.map((s) => SIGNAL_NAMES[s.type])),
+      signals: [...new Set(mine.flatMap((t) => t.signals.map((s) => SIGNAL_NAMES[s.type])))],
     };
   });
   const { end } = session;

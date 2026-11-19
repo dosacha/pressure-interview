@@ -178,7 +178,7 @@ test('stats.md의 꼴', () => {
 });
 
 // 줄기가 있는 면접. 줄기 1(영속성, 핵심)은 틀려 꼬리질문으로 바로잡았고, 줄기 2(확장, 핵심)는 대체로 알았다.
-function endView({ end, judgment: judg, scores = {} }) {
+function endView({ end, judgment: judg, scores = {}, third }) {
   const session = {
     id: 's2',
     topic: 'Redis',
@@ -207,7 +207,7 @@ function endView({ end, judgment: judg, scores = {} }) {
       analysis: analysis({ score: 'solid', signals: [{ type: 'selfCorrection', quote: '아 틀렸네요' }, { type: 'practical', quote: '운영에서는' }] }),
       review: rv(2),
     }),
-    mk(3, { thread: { no: 2, role: 'open', areaId: 'scaling', followKind: null }, analysis: analysis({ score: 'mostly', signals: [{ type: 'practical', quote: '샤딩' }] }), review: rv(3) }),
+    mk(3, { thread: { no: 2, role: 'open', areaId: 'scaling', followKind: null }, analysis: analysis({ score: 'mostly', signals: [{ type: 'practical', quote: '샤딩' }] }), review: rv(3), ...third }),
   ];
   const view = toReviewView(session, turns, { running: false, error: null, folded: [], usage: [], judgment: judg ?? null });
   return renderReview(view, { usage: [], waits: [] });
@@ -264,6 +264,14 @@ test('렌더: 영역별 표에 묻지 않은 영역도 나오고 내부 id는 �
   assert.ok(doc.includes('면접 중 점수: 잘 앎'));
   assert.ok(doc.includes('재검사-3'));
   assert.ok(doc.includes('스스로 고침: 아 틀렸네요'));
+});
+
+test('렌더: 꼬리질문 전에 끝나 줄기가 안 닫혀도 점수가 있으면 물음이고 신호 이름은 한 번만 나온다', () => {
+  const solid = analysis({ score: 'solid', signals: [{ type: 'practical', quote: 'a' }, { type: 'practical', quote: 'b' }] });
+  const doc = endView({ end: { by: 'user' }, third: { analysis: solid } });
+  const row = doc.split('\n').find((l) => l.startsWith('| 확장 |'));
+  assert.ok(row.startsWith('| 확장 | 핵심 | 물음 |'), row);
+  assert.equal(row.split('실무 적용').length, 2, row);
 });
 
 test('렌더: 바로잡은 점수로 enough 조건이 무너지면 그 줄이 나온다', () => {
