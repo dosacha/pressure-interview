@@ -57,7 +57,7 @@ const SAY = {
   other: '오류가 났습니다. 다시 하면 멈춘 곳부터 합니다.',
 };
 
-const RETRY_RESUME = '사용자가 다시 하겠다고 하면 resume을 실행한다.';
+const RETRY_RESUME = "사용자가 다시 하겠다고 하면 resume을 실행한다. 사용자가 '끝'이라고 하면 finish를 실행한다.";
 const FAIL_NEXT = {
   usage_limit: '다시 시도하지 않는다. 한도가 풀린 뒤 사용자가 이어서를 치면 resume을 실행한다.',
   no_answer: '사용자의 답을 answerFile에 쓴 뒤 answer를 다시 실행한다.',

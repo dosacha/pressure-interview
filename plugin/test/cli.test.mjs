@@ -381,6 +381,7 @@ test('실패한 뒤 resume이 이어 간다', () => {
   assert.equal(a.status, 1);
   assert.equal(a.json.code, 'other');
   assert.ok(a.json.next.includes('resume을 실행한다'), a.json.next);
+  assert.ok(a.json.next.includes('finish를 실행한다'), a.json.next);
   const r = run(w, ['resume']);
   assert.equal(r.json.kind, 'question');
   assert.ok(r.json.say.startsWith('**질문 2 · '));
