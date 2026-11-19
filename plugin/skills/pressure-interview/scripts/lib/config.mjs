@@ -25,6 +25,8 @@ export const DEFAULTS = {
     analyze: { model: 'opus', effort: 'medium' },
     clarify: { model: 'opus', effort: 'medium' },
     review: { model: 'opus', effort: 'high' },
+    topicMap: { model: 'opus', effort: 'medium' },
+    endJudge: { model: 'opus', effort: 'high' },
   },
 };
 

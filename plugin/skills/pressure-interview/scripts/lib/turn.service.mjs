@@ -3,7 +3,9 @@ import { OWNABLE_AXES, ROLES } from './app/interview/catalog.mjs';
 import { analyzeAnswer } from './app/interview/calls/analyze.call.mjs';
 import { writeAnswerKey } from './app/interview/calls/answer-key.call.mjs';
 import { answerClarification } from './app/interview/calls/clarify.call.mjs';
+import { judgeEnd } from './app/interview/calls/end-judge.call.mjs';
 import { pickJobRole } from './app/interview/calls/job-role.call.mjs';
+import { generateTopicMap } from './app/interview/calls/topic-map.call.mjs';
 import { detectTechs } from './app/interview/calls/leak.call.mjs';
 import { checkPremise } from './app/interview/calls/premise.call.mjs';
 import { generateQuestion } from './app/interview/calls/question.call.mjs';
@@ -148,6 +150,16 @@ export class TurnService {
   async pickJobRole(topic) {
     const { data, usage } = await pickJobRole(this.as('jobRole'), topic);
     return { role: data.role, usage };
+  }
+
+  async pickTopicMap(topic) {
+    const { data, usage } = await generateTopicMap(this.as('topicMap'), topic);
+    return { topicMap: data, usage };
+  }
+
+  async judgeEnd(input) {
+    const { data, usage } = await judgeEnd(this.as('endJudge'), input);
+    return { judgment: data, usage };
   }
 
   // 모델이 없는 결함·질문·가정을 가리켜도 뒤 단계가 흔들리지 않게 그런 항목을 버리거나 비운다.

@@ -57,6 +57,7 @@ const KINDS = [
   ['reply', 'clarify'], ['role', 'jobRole'], ['keyPoints', 'answerKey'], ['corrections', 'verify'],
   ['premiseOk', 'premise'], ['techs', 'leak'], ['keyProblems', 'review'],
   ['questionIntent', 'question'], ['mentionedTechs', 'analyze'],
+  ['areas', 'topicMap'], ['decision', 'endJudge'],
 ];
 
 export function fakeLlm(queues) {
