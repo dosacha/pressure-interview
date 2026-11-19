@@ -352,3 +352,24 @@ test('복기: replaced로 끝난 면접을 나중에 복기하면 끝낸 까닭�
   assert.match(doc, /## 끝낸 까닭\n\n새 면접을 시작하며 끝냄/);
   assert.match(doc, /## 영역별/);
 });
+
+test('복기가 시간 예산을 넘기면 새 묶음을 시작하지 않고 부분 결과를 돌려준다', async () => {
+  let t = 0;
+  const w = setup();
+  w.config.reviewConcurrency = 1;
+  const reviews = createReviewService({
+    store: w.store, config: w.config, llmFor: () => w.fake.llm, now: () => NOW, budgetMs: 100, clock: () => t,
+  });
+  const id = await play(w, { count: 3 });
+  // 첫 묶음이 끝나면 예산을 넘긴 것으로 본다.
+  w.queue('review', () => { t = 1000; return review(); });
+  const out = await reviews.run(id);
+  assert.deepEqual(out, { done: 1, total: 3, failed: 0, ready: false });
+  assert.equal(w.callsOf('review').length, 1);
+  assert.equal(w.store.readSession(id).reviewedAt, null);
+  // 다시 돌리면 남은 턴만 복기한다.
+  t = 0;
+  const again = await reviews.run(id);
+  assert.deepEqual(again, { done: 3, total: 3, failed: 0, ready: true });
+  assert.equal(w.callsOf('review').length, 3);
+});

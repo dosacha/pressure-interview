@@ -201,7 +201,7 @@ async function reviewOut(env, id, closing) {
       ok: true,
       kind: 'review_partial',
       interview: id,
-      say: `${head}복기 ${r.total}개 가운데 ${r.total - r.done}개가 실패했습니다. 다시 하면 실패한 것만 합니다.`,
+      say: `${head}복기 ${r.total}개 가운데 ${r.total - r.done}개를 아직 못 만들었습니다(실패했거나 시간이 모자랐습니다). 복기를 다시 하면 남은 것만 만듭니다.`,
       next: NEXT.partial,
     };
   }

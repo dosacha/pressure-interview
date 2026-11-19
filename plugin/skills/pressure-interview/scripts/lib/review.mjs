@@ -73,7 +73,10 @@ function writeText(file, text) {
   fs.renameSync(tmp, file);
 }
 
-export function createReviewService({ store, config, llmFor, now = () => new Date() }) {
+// 한 번의 run이 이만큼 돌았으면 새 묶음을 시작하지 않는다. 진행자의 도구 시간 상한(600초)보다 짧아야 한다.
+export const REVIEW_BUDGET_MS = 420000;
+
+export function createReviewService({ store, config, llmFor, now = () => new Date(), budgetMs = REVIEW_BUDGET_MS, clock = Date.now }) {
   const statsFile = path.join(config.dataDir, 'stats.md');
   const paths = (id) => ({ review: path.join(config.dataDir, 'interviews', id, 'review.md'), stats: statsFile });
 
@@ -183,7 +186,9 @@ export function createReviewService({ store, config, llmFor, now = () => new Dat
           store.logError(id, `복기(턴 ${t.seq})`, error);
         }
       };
+      const started = clock();
       for (let i = 0; i < todo.length; i += config.reviewConcurrency) {
+        if (clock() - started >= budgetMs) break;
         await Promise.all(todo.slice(i, i + config.reviewConcurrency).map(reviewOne));
       }
 
