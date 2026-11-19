@@ -152,6 +152,7 @@ export function createReviewService({ store, config, llmFor, now = () => new Dat
       error: null,
       folded: foldAssumptions(turns, store.readMemory().map((r) => r.id)),
       usage,
+      judgment: session.end?.judgeSeq == null ? null : (store.readJudge(id, session.end.judgeSeq)?.judgment ?? null),
     });
     const waits = rows.filter((r) => r.type === 'wait').map((r) => ({ seq: r.seq, wall_ms: r.wall_ms }));
     writeText(paths(id).review, renderReview(view, { usage, waits }));

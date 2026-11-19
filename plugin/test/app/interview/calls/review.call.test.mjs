@@ -1,6 +1,7 @@
 // 서버판 src/interview/calls/review.call.spec.ts @ aeae0dd에서 옮겨 와 스킬이 고쳐 쓴다.
 import { describe, it, expect, jest } from '../../../jest-shim.mjs';
-import { REACTION_INTENTS } from '../../../../skills/pressure-interview/scripts/lib/app/interview/catalog.mjs';
+import { REACTION_INTENTS, SCORES } from '../../../../skills/pressure-interview/scripts/lib/app/interview/catalog.mjs';
+import { SCORE_DEFINITIONS } from '../../../../skills/pressure-interview/scripts/lib/app/interview/calls/analyze.call.mjs';
                                                                           
 import { buildReviewPrompt, REVIEW_SCHEMA, reviewTurn } from '../../../../skills/pressure-interview/scripts/lib/app/interview/calls/review.call.mjs';
 
@@ -68,7 +69,17 @@ describe('review.call', () => {
       'reactions',
       'assumption',
       'keyProblems',
+      'scoreCheck',
     ]);
+  });
+  it('복기 스키마가 scoreCheck를 요구하고 점수 정의를 면접 중 분석과 같은 문장으로 싣는다', () => {
+    const sc = schema.properties.scoreCheck;
+    expect(sc.required).toEqual(['score', 'note']);
+    expect(sc.properties.score.anyOf).toEqual([{ type: 'string', enum: SCORES }, { type: 'null' }]);
+    const { system, user } = buildReviewPrompt({ ...input, analysis: { ...input.analysis, score: 'mostly' } });
+    expect(system).toContain(SCORE_DEFINITIONS);
+    expect(system).toContain('다시 보고');
+    expect(user).toContain('면접 중 분석의 점수: mostly 대체로 앎');
   });
   it('정답지, 답, 면접 중 판정, 이 답에서 나온 질문들을 모두 싣는다', () => {
     const { user } = buildReviewPrompt(input);

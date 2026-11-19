@@ -1,5 +1,6 @@
 // 서버판 src/review/review.view.ts @ aeae0dd에서 옮겨 와 스킬이 고쳐 쓴다.
-import { axisName, DEFECT_NAMES, INTENT_GROUPS, QUESTION_INTENTS, REACTION_INTENTS, ROLES, TEMPERAMENTS } from '../interview/catalog.mjs';
+import { axisName, DEFECT_NAMES, INTENT_GROUPS, QUESTION_INTENTS, REACTION_INTENTS, ROLES, SIGNAL_NAMES, TEMPERAMENTS } from '../interview/catalog.mjs';
+import { areaStatus, checkJudgment, threadScore, threadsOf } from '../../thread.mjs';
              
             
                    
@@ -144,6 +145,52 @@ function toTurnView(
     }),
     review: t.review,
     surprise: t.surprise,
+    score: t.analysis.score ?? null,
+    reviewedScore: reviewedScoreOf(t),
+    scoreNote: t.review?.scoreCheck?.note ?? '',
+    signals: (t.analysis.signals ?? []).map((s) => ({ typeName: SIGNAL_NAMES[s.type], quote: s.quote })),
+  };
+}
+
+// 복기가 점수를 안 줬거나(null) 예전 복기이면 면접 중 점수를 그대로 쓴다.
+const reviewedScoreOf = (t) => t.review?.scoreCheck?.score ?? t.analysis?.score ?? null;
+
+// 줄기의 틀(끝났는지, 꼬리질문 종류)은 그대로 두고 점수만 바로잡은 점수로 바꾼다.
+function reviewedThreadsOf(threads, turns) {
+  const bySeq = new Map(turns.map((t) => [t.seq, t]));
+  const at = (seq, fallback) => (seq !== null && bySeq.has(seq) && fallback !== null ? reviewedScoreOf(bySeq.get(seq)) : fallback);
+  return threads.map((th) => {
+    const next = { ...th, openScore: at(th.openSeq, th.openScore), followScore: at(th.followSeq, th.followScore) };
+    return { ...next, score: threadScore(next) };
+  });
+}
+
+const nonNull = (xs) => xs.filter((x) => x !== null);
+
+// 끝낸 까닭과 영역별 표. 줄기 장부가 없는 예전 면접이면 둘 다 null이다.
+function endingViews(session, turns, judgment) {
+  if (!session.topicMap) return { end: null, areas: null };
+  const threads = threadsOf(turns);
+  const reviewed = reviewedThreadsOf(threads, turns);
+  const status = areaStatus(session.topicMap, threads);
+  const areas = session.topicMap.areas.map((a) => {
+    const mine = threads.filter((t) => t.areaId === a.id);
+    return {
+      name: a.name,
+      core: a.core,
+      asked: status[a.id].asked,
+      score: nonNull(mine.map((t) => t.score)),
+      reviewedScore: nonNull(reviewed.filter((t) => t.areaId === a.id).map((t) => t.score)),
+      signals: mine.flatMap((t) => t.signals.map((s) => SIGNAL_NAMES[s.type])),
+    };
+  });
+  const { end } = session;
+  if (!end) return { end: null, areas };
+  const j = end.by === 'claude' ? judgment : null;
+  const recheck = j && ['enough', 'settled'].includes(end.decision) ? checkJudgment({ judgment: j, topicMap: session.topicMap, threads: reviewed }).failed : [];
+  return {
+    end: { by: end.by, decision: end.decision ?? null, note: j?.note ?? '', evidence: j?.evidence ?? null, candidates: j?.candidates ?? [], recheckFailed: recheck },
+    areas,
   };
 }
 
@@ -176,5 +223,6 @@ export function toReviewView(
       turnSeq: seqOf.get(f.turnIds[f.turnIds.length - 1]) ,
     })),
     usage: extra.usage,
+    ...endingViews(session, turns, extra.judgment ?? null),
   };
 }

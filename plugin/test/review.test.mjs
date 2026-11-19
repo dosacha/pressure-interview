@@ -339,3 +339,16 @@ test('stats: 흔들림에서 잘 답함으로 바뀐 가정을 세고, 예상 �
   assert.match(doc, /Kafka/);
   assert.match(doc, /50%/);
 });
+
+test('복기: replaced로 끝난 면접을 나중에 복기하면 끝낸 까닭이 "새 면접을 시작하며 끝냄"', async () => {
+  const w = setup();
+  const { id } = await w.interviews.start({ topic: 'Redis' });
+  await w.interviews.submitAnswer(id, '답-1');
+  await w.interviews.start({ topic: 'Kafka', replace: true });
+  assert.equal(w.store.readSession(id).end.by, 'replaced');
+  const out = await w.reviews.run(id);
+  assert.equal(out.ready, true);
+  const doc = fs.readFileSync(w.reviews.paths(id).review, 'utf8');
+  assert.match(doc, /## 끝낸 까닭\n\n새 면접을 시작하며 끝냄/);
+  assert.match(doc, /## 영역별/);
+});

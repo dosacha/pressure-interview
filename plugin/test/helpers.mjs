@@ -96,6 +96,7 @@ export const review = (over = {}) => ({
   reactions: [],
   assumption: { result: 'none', note: '', sameAs: null },
   keyProblems: [],
+  scoreCheck: { score: null, note: '' },
   ...over,
 });
 // 핵심 둘(축 durability는 DBA, scale은 시나리오형이 맡는다), 주변 둘.

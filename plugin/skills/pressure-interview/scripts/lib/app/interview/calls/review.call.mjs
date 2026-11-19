@@ -1,5 +1,6 @@
 // 서버판 src/interview/calls/review.call.ts @ aeae0dd에서 옮겨 와 스킬이 고쳐 쓴다.
-import { axisName, DEFECT_NAMES, QUESTION_INTENTS, REACTION_INTENTS, ROLES, TEMPERAMENTS } from '../catalog.mjs';
+import { axisName, DEFECT_NAMES, QUESTION_INTENTS, REACTION_INTENTS, ROLES, SCORES, SCORE_NAMES, TEMPERAMENTS } from '../catalog.mjs';
+import { SCORE_DEFINITIONS } from './analyze.call.mjs';
                                                   
                                                                             
 
@@ -8,7 +9,7 @@ const note = (description        ) => ({ type: 'string', description });
 export const REVIEW_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['intent', 'defects', 'reactions', 'assumption', 'keyProblems'],
+  required: ['intent', 'defects', 'reactions', 'assumption', 'keyProblems', 'scoreCheck'],
   properties: {
     intent: {
       type: 'object',
@@ -73,6 +74,18 @@ export const REVIEW_SCHEMA = {
         },
       },
     },
+    scoreCheck: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['score', 'note'],
+      properties: {
+        score: {
+          anyOf: [{ type: 'string', enum: SCORES }, { type: 'null' }],
+          description: '면접 중 점수를 다시 보고 매긴 점수. 점수를 매기지 않는 답이면 null',
+        },
+        note: note('면접 중 점수와 다르면 그 까닭, 같으면 그렇게 본 까닭'),
+      },
+    },
     keyProblems: {
       type: 'array',
       items: { type: 'string' },
@@ -124,6 +137,12 @@ result는 가정을 바꾼 질문일 때만 매긴다. 가정을 바꾸지 않�
 
 sameAs에는 user 메시지의 같은 축의 기록된 가정 가운데 이 질문의 가정과 같은 가정이 있으면 그 key를 적고, 없으면 null로 둔다. 기술이 달라도 바뀐 것이 같으면 같은 가정이다. 기억의 단위가 기술 쌍이 아니라 바뀐 가정이라서, 다른 기술 조합에 끼워 다시 낸 가정도 같은 가정으로 알아봐야 하기 때문이다. 가정을 바꾸지 않은 질문이면 null이다.
 
+## scoreCheck
+
+면접 중 점수가 맞는지 다시 보고, 다르면 바로잡은 점수와 그 까닭을 note에 적는다. 점수는 아래 넷 가운데 하나이고 이 답이 보여 주는 이해의 수준을 본다. 면접 중 점수가 맞으면 같은 점수를 적고 note에 그렇게 본 까닭을 적는다. 면접 중 점수가 없는 답(전제 기술을 모른다고 한 답)이면 score를 null로 둔다.
+
+${SCORE_DEFINITIONS}
+
 ## keyProblems
 
 정답지에 틀린 내용이 보이면 무엇이 왜 틀렸는지 하나씩 적는다. 없으면 빈 배열로 둔다. 정답지는 복기에서 그대로 공개되므로, 여기에 적은 문제를 함께 보여 주어 지원자가 틀린 정답지를 배우지 않게 하기 때문이다. 확인되지 않은 의심은 문제로 적지 않는다.`;
@@ -166,6 +185,8 @@ sameAs에는 user 메시지의 같은 축의 기록된 가정 가운데 이 질�
   lines.push('면접 중 분석의 결함:');
   if (input.analysis.defects.length === 0) lines.push('없음');
   input.analysis.defects.forEach((d, i) => lines.push(`[${i}] ${defectLine(d)}`));
+  const { score } = input.analysis;
+  lines.push('', `면접 중 분석의 점수: ${score ? `${score} ${SCORE_NAMES[score]}` : '없음'}`);
 
   if (input.followUps.length > 0) {
     lines.push('', '이 답에서 나온 질문:');

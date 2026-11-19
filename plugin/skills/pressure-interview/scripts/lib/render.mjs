@@ -1,4 +1,5 @@
 // 앱의 복기 화면(frontend/web/components/review-screen.tsx)과 추이 화면이 보이던 것을 Markdown으로 쓴다. 답 시작 시간은 싣지 않는다.
+import { SCORE_NAMES } from './app/interview/catalog.mjs';
 
 const RESULT = { well: '잘 답함', wobbly: '흔들림', wrong: '틀림', none: '해당 없음' };
 const DEFECT_VERDICT = { valid: '맞는 판정', misjudged: '오판' };
@@ -49,7 +50,7 @@ export function summarizeCalls(rows) {
   return [...groups.values()].sort((a, b) => cmp(a.kind, b.kind) || cmp(a.model, b.model));
 }
 
-function turnSection(t) {
+function turnSection(t, withScores) {
   const r = t.review;
   const key = t.answerKey;
   const out = [`## 질문 ${t.seq} · ${t.interviewer.roleName}(${t.interviewer.temperamentName})${t.addOn ? ' · 덧붙이는 질문' : ''}`, '', t.text, ''];
@@ -143,19 +144,67 @@ function turnSection(t) {
   ].filter(Boolean);
   if (flags.length > 0) out.push('### 표시', '', ...list(flags), '');
 
+  if (withScores) {
+    out.push(
+      '### 점수와 신호',
+      '',
+      `면접 중 점수: ${t.score === null ? '없음' : SCORE_NAMES[t.score]}`,
+      `재검사 점수: ${withNote(t.reviewedScore === null ? '없음' : SCORE_NAMES[t.reviewedScore], t.scoreNote)}`,
+      '',
+      ...list(t.signals.map((s) => `${s.typeName}: ${s.quote}`), '신호 없음'),
+      '',
+    );
+  }
+
   out.push('### 예상 표시', '', SURPRISE[t.surprise] ?? '표시 없음', '');
   return out;
 }
 
+const END_BY = { user: '사용자가 끝냄', cap: '질문 상한에서 끝냄', replaced: '새 면접을 시작하며 끝냄' };
+const END_DECISION = { enough: '볼 만큼 봤다', exhausted: '더 물을 게 없다', settled: '판단이 섰다' };
+const CANDIDATE_VERDICT = { repeat: '이미 물음', contrived: '억지스러움', offTopic: '주제에서 벗어남' };
+const CRITERIA = {
+  knows: '잘 앎', applies: '바로 쓸 수 있음', learns: '빨리 배움', coreCovered: '핵심 영역을 모두 물음',
+  wrongRatio: '틀림 비율', noLearning: '학습 신호 없음', candidates: '후보 셋',
+};
+const scoreNames = (scores) => (scores.length === 0 ? '-' : scores.map((s) => SCORE_NAMES[s]).join(', '));
+
+function endSection(end) {
+  const out = ['## 끝낸 까닭', '', end.by === 'claude' ? END_DECISION[end.decision] : END_BY[end.by], ''];
+  if (end.note) out.push(end.note, '');
+  if (end.decision === 'enough' && end.evidence) {
+    const lines = ['knows', 'applies', 'learns'].filter((k) => end.evidence[k]?.length > 0).map((k) => `${CRITERIA[k]}: ${end.evidence[k].map((n) => `줄기 ${n}`).join(', ')}`);
+    if (lines.length > 0) out.push('근거 줄기', '', ...list(lines), '');
+  }
+  if (end.decision === 'exhausted' && end.candidates.length > 0) {
+    out.push('후보 질문', '', ...list(end.candidates.map((c) => `${c.question} (${CANDIDATE_VERDICT[c.verdict] ?? c.verdict}): ${c.why}`)), '');
+  }
+  if (end.recheckFailed.length > 0) out.push(`재검사 점수로는 조건을 채우지 못함: ${end.recheckFailed.map((k) => CRITERIA[k]).join(', ')}`, '');
+  return out;
+}
+
+const areasSection = (areas) => [
+  '## 영역별',
+  '',
+  ...table(
+    ['영역', '핵심', '물음', '면접 중 점수', '재검사 점수', '신호'],
+    areas.map((a) => [a.name, a.core ? '핵심' : '주변', a.asked ? '물음' : '묻지 않음', scoreNames(a.score), scoreNames(a.reviewedScore), a.signals.length === 0 ? '-' : a.signals.join(', ')]),
+  ),
+  '',
+];
+
 /** reviewView는 toReviewView의 결과다. 숨긴 값(의도·정답지·판정)을 모두 싣는다. */
 export function renderReview(reviewView, { usage, waits }) {
   const v = reviewView;
-  const out = [`# 복기: ${v.topic} (${minute(new Date(v.createdAt))})`, '', '## 가정별 결과', ''];
+  const out = [`# 복기: ${v.topic} (${minute(new Date(v.createdAt))})`, ''];
+  if (v.end) out.push(...endSection(v.end));
+  if (v.areas) out.push(...areasSection(v.areas));
+  out.push('## 가정별 결과', '');
   if (v.assumptions.length === 0) out.push('가정별 결과가 없습니다.');
   else out.push(...table(['축', '가정', '결과', '질문'], v.assumptions.map((a) => [a.axisName, a.statement, RESULT[a.result], a.turnSeq])));
   out.push('');
 
-  for (const t of v.turns) out.push(...turnSection(t));
+  for (const t of v.turns) out.push(...turnSection(t, v.areas !== null));
 
   if (v.skippedAnswers > 0) out.push(`분석되지 않아 복기에서 빠진 답 ${v.skippedAnswers}개`, '');
 

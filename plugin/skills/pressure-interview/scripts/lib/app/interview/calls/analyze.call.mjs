@@ -4,6 +4,12 @@ import { axisName, DEFECT_NAMES, DEFECT_PRIORITY, DEFECT_TYPES, OWNABLE_AXES, QU
                                                                
 import { ANSWER_KEY_SCHEMA } from './question.call.mjs';
 
+// 복기 프롬프트도 이 문장을 그대로 쓴다.
+export const SCORE_DEFINITIONS = `- solid 잘 앎: 핵심을 맞게 말했고, 왜 그런지 원리로 설명했다. 빠진 것이 있어도 짚어 주면 바로 채울 수준이다
+- mostly 대체로 앎: 결론은 맞지만 이유가 얕거나 중요한 조건 하나를 놓쳤다
+- unclear 애매함: 맞는 말과 틀린 말이 섞였거나, 일반론만 말해 아는지 알 수 없다
+- wrong 틀림/모름: 핵심이 틀렸거나 모른다고 했다`;
+
 export const ANALYZE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -113,10 +119,7 @@ ${Object.entries(ANSWER_KEY_SCHEMA.properties)
 
 답마다 score를 아래 넷 가운데 하나로 매긴다. 결함을 적는 일과 별개로, 이 답이 보여 주는 이해의 수준을 본다.
 
-- solid 잘 앎: 핵심을 맞게 말했고, 왜 그런지 원리로 설명했다. 빠진 것이 있어도 짚어 주면 바로 채울 수준이다
-- mostly 대체로 앎: 결론은 맞지만 이유가 얕거나 중요한 조건 하나를 놓쳤다
-- unclear 애매함: 맞는 말과 틀린 말이 섞였거나, 일반론만 말해 아는지 알 수 없다
-- wrong 틀림/모름: 핵심이 틀렸거나 모른다고 했다
+${SCORE_DEFINITIONS}
 
 되묻기(clarify)에는 score를 null로 둔다. 면접관이 꺼낸 전제 기술을 모른다고 한 답은 score를 null로 둔다. 써 보지 않은 기술을 모르는 것은 지원자의 결함이 아니므로 점수를 매기지 않는다.
 
