@@ -105,7 +105,13 @@ export const DEFECT_NAMES                             = {
   no_evidence: '근거 없음',
 };
 
-export const DEFECT_PRIORITY                             = {
+// 설계 5.4의 점수 넷과 신호 셋
+export const SCORES = ['solid', 'mostly', 'unclear', 'wrong'];
+export const SCORE_NAMES = { solid: '잘 앎', mostly: '대체로 앎', unclear: '애매함', wrong: '틀림/모름' };
+export const SIGNAL_TYPES = ['practical', 'reasoning', 'selfCorrection'];
+export const SIGNAL_NAMES = { practical: '실무 적용', reasoning: '추론', selfCorrection: '스스로 고침' };
+
+export const DEFECT_PRIORITY                            = {
   wrong: 4,
   missing_axis: 3,
   no_why: 2,

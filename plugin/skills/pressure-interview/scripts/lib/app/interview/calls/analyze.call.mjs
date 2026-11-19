@@ -1,5 +1,5 @@
 // 서버판 src/interview/calls/analyze.call.ts @ aeae0dd에서 옮겨 와 스킬이 고쳐 쓴다.
-import { axisName, DEFECT_NAMES, DEFECT_PRIORITY, DEFECT_TYPES, OWNABLE_AXES, QUESTION_INTENTS } from '../catalog.mjs';
+import { axisName, DEFECT_NAMES, DEFECT_PRIORITY, DEFECT_TYPES, OWNABLE_AXES, QUESTION_INTENTS, SCORES, SIGNAL_TYPES } from '../catalog.mjs';
                                                   
                                                                
 import { ANSWER_KEY_SCHEMA } from './question.call.mjs';
@@ -7,8 +7,25 @@ import { ANSWER_KEY_SCHEMA } from './question.call.mjs';
 export const ANALYZE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['kind', 'defects', 'mentionedTechs', 'unknownTechs', 'selfUnknownTechs'],
+  required: ['kind', 'defects', 'mentionedTechs', 'unknownTechs', 'selfUnknownTechs', 'score', 'signals'],
   properties: {
+    score: {
+      anyOf: [{ type: 'string', enum: SCORES }, { type: 'null' }],
+      description: '답의 점수. clarify이거나 면접관이 꺼낸 전제 기술을 모른다고 한 답이면 null',
+    },
+    signals: {
+      type: 'array',
+      description: '답에서 보인 근거 신호. 해당할 때만. clarify이면 빈 배열',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['type', 'quote'],
+        properties: {
+          type: { type: 'string', enum: SIGNAL_TYPES, description: '신호 유형 id' },
+          quote: { type: 'string', description: '답에서 그 부분을 글자 그대로 인용한 것' },
+        },
+      },
+    },
     kind: {
       type: 'string',
       enum: ['answer', 'clarify'],
@@ -91,6 +108,27 @@ ${Object.entries(ANSWER_KEY_SCHEMA.properties)
 ## 되묻기
 
 지원자의 입력이 답이 아니라 질문의 범위나 조건을 되묻는 것이면 kind를 clarify로 두고 defects는 빈 배열로 둔다. 되묻기는 허용된 행동이고, 같은 면접관이 범위와 조건에만 답하므로 결함을 매길 대상이 아니다. 그 밖에는 kind를 answer로 둔다.
+
+## 점수
+
+답마다 score를 아래 넷 가운데 하나로 매긴다. 결함을 적는 일과 별개로, 이 답이 보여 주는 이해의 수준을 본다.
+
+- solid 잘 앎: 핵심을 맞게 말했고, 왜 그런지 원리로 설명했다. 빠진 것이 있어도 짚어 주면 바로 채울 수준이다
+- mostly 대체로 앎: 결론은 맞지만 이유가 얕거나 중요한 조건 하나를 놓쳤다
+- unclear 애매함: 맞는 말과 틀린 말이 섞였거나, 일반론만 말해 아는지 알 수 없다
+- wrong 틀림/모름: 핵심이 틀렸거나 모른다고 했다
+
+되묻기(clarify)에는 score를 null로 둔다. 면접관이 꺼낸 전제 기술을 모른다고 한 답은 score를 null로 둔다. 써 보지 않은 기술을 모르는 것은 지원자의 결함이 아니므로 점수를 매기지 않는다.
+
+## 신호
+
+signals에는 해당할 때만 적는다. 없으면 빈 배열이다. 신호마다 quote에 답에서 그 부분을 글자 그대로 인용한다. 인용할 수 없으면 적지 않는다.
+
+- practical 실무 적용: 구체적인 운영 상황에서 무엇을 고르고, 왜 고르고, 무엇을 감수하는지 말했다.
+- reasoning 추론: 모르는 것이나 처음 보는 조건에서 아는 원리로부터 그럴듯한 답에 다가갔다.
+- selfCorrection 스스로 고침: 반례나 꼬리질문을 받고 자기 답의 틀린 곳을 찾아 고쳤다.
+
+되묻기(clarify)이면 signals는 빈 배열이다.
 
 ## 결함 유형
 

@@ -1,6 +1,6 @@
 // 서버판 src/interview/calls/calls.spec.ts @ aeae0dd에서 옮겨 와 스킬이 고쳐 쓴다.
 import { describe, it, expect, jest } from '../../../jest-shim.mjs';
-import { AXES, DEFECT_NAMES, DEFECT_TYPES, OWNABLE_AXES } from '../../../../skills/pressure-interview/scripts/lib/app/interview/catalog.mjs';
+import { AXES, SCORES, DEFECT_NAMES, DEFECT_TYPES, OWNABLE_AXES } from '../../../../skills/pressure-interview/scripts/lib/app/interview/catalog.mjs';
 
 import { ANALYZE_SCHEMA, analyzeAnswer } from '../../../../skills/pressure-interview/scripts/lib/app/interview/calls/analyze.call.mjs';
 import { buildAnswerKeyPrompt } from '../../../../skills/pressure-interview/scripts/lib/app/interview/calls/answer-key.call.mjs';
@@ -107,6 +107,20 @@ describe('analyze / verify / leak 호출', () => {
   it('분석 스키마는 selfUnknownTechs를 요구한다', () => {
     expect(ANALYZE_SCHEMA.required).toContain('selfUnknownTechs');
     expect(ANALYZE_SCHEMA.properties.selfUnknownTechs.type).toBe('array');
+  });
+  it('분석 스키마가 점수와 신호를 요구한다', () => {
+    expect(ANALYZE_SCHEMA.required).toContain('score');
+    expect(ANALYZE_SCHEMA.required).toContain('signals');
+    expect(ANALYZE_SCHEMA.properties.score.anyOf[0].enum).toEqual(SCORES);
+    expect(ANALYZE_SCHEMA.properties.score.anyOf[1]).toEqual({ type: 'null' });
+    expect(enumAt(ANALYZE_SCHEMA, ['properties', 'signals', 'items', 'properties', 'type'])).toEqual(['practical', 'reasoning', 'selfCorrection']);
+    expect(SCORES).toEqual(['solid', 'mostly', 'unclear', 'wrong']);
+  });
+  it('분석 프롬프트가 점수와 신호의 정의를 그대로 싣는다', async () => {
+    const { system } = await promptOf((llm) => analyzeAnswer(llm, { topic: 'Redis', question, answer: '...' }));
+    for (const s of ['핵심을 맞게 말했고, 왜 그런지 원리로 설명했다', '결론은 맞지만 이유가 얕거나', '맞는 말과 틀린 말이 섞였거나', '핵심이 틀렸거나 모른다고 했다',
+      '구체적인 운영 상황에서 무엇을 고르고', '아는 원리로부터 그럴듯한 답에 다가갔다', '자기 답의 틀린 곳을 찾아 고쳤다',
+      '답에서 그 부분을 글자 그대로 인용', '면접관이 꺼낸 전제 기술을 모른다고 한 답은 score를 null로']) expect(system).toContain(s);
   });
   it('스스로 꺼내며 모른다고 한 기술을 따로 적게 하고 까닭을 말한다', async () => {
     const { system } = await promptOf((llm) =>

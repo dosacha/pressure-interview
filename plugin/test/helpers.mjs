@@ -87,7 +87,7 @@ export const key = (over = {}) => ({
   vanishing: ['디스크 I/O'], remaining: ['데이터 모델'], alternatives: [], keyPoints: ['MVCC'], ...over,
 });
 export const analysis = (over = {}) => ({
-  kind: 'answer', defects: [], mentionedTechs: [], unknownTechs: [], selfUnknownTechs: [], ...over,
+  kind: 'answer', defects: [], mentionedTechs: [], unknownTechs: [], selfUnknownTechs: [], score: 'mostly', signals: [], ...over,
 });
 export const review = (over = {}) => ({
   intent: { aimed: true, note: '' },
