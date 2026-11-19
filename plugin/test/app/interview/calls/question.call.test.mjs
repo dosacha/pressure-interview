@@ -102,6 +102,7 @@ describe('question.call', () => {
     expect(user).toContain('새 영역: 캐시 만료. 이 영역을 identity_swap 기술의 핵심 속성 바꾸기(정체성 비교) 축의 가정을 바꿔 연다.');
     expect(user).toContain('방향: 만료가 없는 캐시라면 무엇이 남는가');
     expect(user).toContain('교과서 정의를 묻지 않는다');
+    expect(user).toContain('어느 영역으로 넘어간다고 알리지 않고, 영역 이름도 말하지 않는다');
     expect(user).not.toContain('반응 의도');
   });
   it('주제 지도의 angles를 허를 찌를 방향 후보로 싣는다', () => {
