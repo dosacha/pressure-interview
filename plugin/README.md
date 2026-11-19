@@ -93,7 +93,7 @@ ln -s "<저장소>/plugin/skills/pressure-interview" ~/.claude/skills/pressure-i
 }
 ```
 
-- `<스킬 폴더>`는 링크로 설치했으면 `~/.claude/skills/pressure-interview`를 풀어 쓴 경로다. 플러그인으로 설치했으면 `~/.claude/plugins/cache/pressure-interview/pressure-interview/<버전>/skills/pressure-interview`이고, `<버전>`(커밋 앞 12자리)은 갱신할 때마다 바뀌어 규칙도 다시 적어야 한다. 경로 가운데의 `*`가 규칙에서 맞는지는 확인하지 못했다. Bash와 PowerShell 도구가 별개의 규칙이라 둘 다 적는다. 끝의 ` *`는 어떤 인자든, 인자가 없는 경우까지 맞는다.
+- `<스킬 폴더>`는 링크로 설치했으면 `~/.claude/skills/pressure-interview`를 풀어 쓴 경로다. 플러그인으로 설치했으면 `~/.claude/plugins/cache/pressure-interview/pressure-interview/<버전>/skills/pressure-interview`를 풀어 쓴 절대 경로이고(`~`를 그대로 두면 맞지 않는다), `<버전>`(커밋 앞 12자리)은 갱신할 때마다 바뀌어 규칙도 다시 적어야 한다. 경로 가운데의 `*`가 규칙에서 맞는지는 확인하지 못했다. Bash와 PowerShell 도구가 별개의 규칙이라 둘 다 적는다. 끝의 ` *`는 어떤 인자든, 인자가 없는 경우까지 맞는다.
 - 파일 쓰기는 `Write(...)` 규칙이 아니라 `Edit(...)` 규칙으로 묶인다. 공식 문서가 `Write(경로)` 규칙은 맞지 않는다고 하고, `Edit` 규칙이 파일을 고치는 내장 도구 전체에 적용된다고 한다.
 - 경로는 gitignore 꼴이다. `//`로 시작하면 파일 시스템 뿌리에서의 절대 경로다. Windows는 경로를 POSIX 꼴로 바꿔 맞추므로 `C:\Users\나\면접`은 `//c/Users/나/면접`이다. macOS·Linux는 `Edit(//<면접 폴더의 절대 경로>/interviews/**/answers/*)`나 홈 아래라면 `Edit(~/<홈 아래 경로>/interviews/**/answers/*)`로 쓴다. 맨 앞 `/` 하나는 설정 파일 위치 기준의 상대 경로라 절대 경로가 아니다.
 - 권한 창에서 "Yes, and don't ask again"을 고르면, 명령(Bash)은 저장소와 명령마다 계속 유지되고(`.claude/settings.local.json`에 저장) 파일 수정은 세션이 끝날 때까지만 유지된다.
