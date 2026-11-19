@@ -1,0 +1,12 @@
+{
+  "name": "pressure-interview",
+  "description": "기술 압박 면접을 혼자 연습한다. 주제를 주면 면접관 셋이 가정을 바꿔 가며 묻고, 끝나면 숨겨 둔 정답지로 복기 문서를 만든다.",
+  "author": {
+    "name": "dosacha",
+    "url": "https://github.com/dosacha"
+  },
+  "homepage": "https://github.com/dosacha/pressure-interview",
+  "repository": "https://github.com/dosacha/pressure-interview",
+  "license": "MIT",
+  "keywords": ["interview", "mock-interview", "korean", "practice", "skill"]
+}

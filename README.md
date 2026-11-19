@@ -26,6 +26,24 @@
 - Windows에서는 네이티브 설치기로 설치한 `claude.exe`여야 한다. npm으로 설치해 `claude.cmd`만 있으면 엔진이 `claude`를 실행하지 못한다(자세한 것은 [`plugin/README.md`](./plugin/README.md)의 "필요한 것").
 - Node.js 24. 엔진은 의존성이 없어서 `npm install`이 필요 없다.
 
+### 플러그인으로 설치 (권장)
+
+Claude Code에서 이 저장소를 마켓플레이스로 더하고 플러그인을 설치한다.
+
+```
+/plugin marketplace add dosacha/pressure-interview
+/plugin install pressure-interview@pressure-interview
+```
+
+명령줄에서는 같은 두 줄을 `claude plugin marketplace add dosacha/pressure-interview`, `claude plugin install pressure-interview@pressure-interview`로 친다. Claude Code 2.1.275 이후라면 세션에서 `/plugin install pressure-interview --marketplace dosacha/pressure-interview` 한 줄로도 된다. 설치한 뒤 Claude Code를 새로 연다.
+
+- 플러그인 안의 스킬이라 정식 이름은 `/pressure-interview:pressure-interview`다. 같은 이름의 다른 명령이 없으면 `/pressure-interview`로도 부를 수 있다(공식 문서 기준, 직접 확인하지 못함). 이 문서의 `/pressure-interview`는 둘 중 되는 쪽으로 읽는다.
+- 플러그인에 버전을 적지 않아 커밋이 곧 버전이다. 남이 만든 마켓플레이스는 저절로 갱신되지 않으므로, 새 커밋을 받으려면 `claude plugin marketplace update pressure-interview` 뒤에 `claude plugin update pressure-interview@pressure-interview`를 하고 Claude Code를 새로 연다.
+- 아래 "링크로 설치"와 함께 쓰면 같은 스킬이 둘 보인다. 하나만 쓴다.
+- 설치가 맞는지는 새 세션에서 `/pressure-interview`를 쳐서 본다. 상태를 보여 주고, 처음이면 면접 폴더를 묻는다.
+
+### 링크로 설치 (저장소를 고치며 쓸 때)
+
 저장소를 내려받고, 저장소 안의 `plugin/skills/pressure-interview` 폴더를 `~/.claude/skills/` 아래에 링크로 건다.
 
 ```bash
@@ -49,9 +67,7 @@ ln -s "$PWD/plugin/skills/pressure-interview" ~/.claude/skills/pressure-intervie
 
 Claude Code를 새로 열면 `/pressure-interview`가 보인다. 복사본이 아니라 링크로 걸었기 때문에, 저장소를 `git pull`하면 스킬도 바로 바뀐다.
 
-`/plugin install`로는 아직 설치할 수 없다. 폴더 구조만 플러그인에 맞춰 뒀다.
-
-설치가 맞는지는 저장소 뿌리에서 이렇게 본다. `--call`을 붙이면 모델을 한 번 불러 본다.
+링크로 설치했으면 설치가 맞는지 저장소 뿌리에서 이렇게 본다. `--call`을 붙이면 모델을 한 번 불러 본다.
 
 ```bash
 node plugin/skills/pressure-interview/scripts/cli.mjs doctor
@@ -332,6 +348,8 @@ node --test "plugin/test/**/*.test.mjs"
 스킬의 테스트는 실제 모델을 부르지 않는다. 가짜 `claude`(`plugin/test/fake-claude.mjs`)와 임시 폴더만 쓴다. 서버판에서 옮겨 온 규칙의 테스트, 시작부터 복기까지의 흐름, 숨길 내용이 면접 중의 출력에 하나도 섞이지 않는지 보는 누출 검사가 들어 있다.
 
 ```
+.claude-plugin/marketplace.json   이 저장소를 마켓플레이스로 만든다
+plugin/.claude-plugin/plugin.json 플러그인 정보(버전은 적지 않아 커밋이 버전)
 plugin/skills/pressure-interview/
   SKILL.md              진행자의 규칙
   scripts/cli.mjs       엔진 명령
