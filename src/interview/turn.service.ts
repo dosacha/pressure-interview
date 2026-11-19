@@ -34,6 +34,13 @@ import type {
 } from './types';
 
 // 이름 위반을 다음 시도에 줄 피드백 문장으로 바꾼다. 해답 위반 먼저, 이름은 한 문장에만 넣는다.
+// 흘림 검사가 지원자가 말한 기술(role: user)로 판정한 이름은 말한 기술로 친다. 이름 검사는 글자만 맞추므로
+// 주제 문장 안의 이름("PostgreSQL와 Redis 차이"의 Redis)이나 다른 표기("레디스")를 놓친다. 모른다고 한 기술은 avoid가 따로 잡는다.
+const withUserTechs = (mentioned: string[], techs: TechMention[]): string[] => [
+  ...mentioned,
+  ...techs.filter((t) => t.role === 'user').map((t) => t.name),
+];
+
 function namingFeedback(naming: NamingResult): string[] {
   const feedback: string[] = [];
   const solutions = naming.violations.filter((n) => !naming.avoided.includes(n));
@@ -82,7 +89,7 @@ export class TurnService {
           : techs;
       const naming = checkNaming({
         techs: checked,
-        userMentioned: input.userMentioned,
+        userMentioned: withUserTechs(input.userMentioned, checked),
         avoid: input.avoidTechs,
       });
       premise = naming.ok && premiseResult ? premiseResult.data : null;
@@ -143,10 +150,14 @@ export class TurnService {
       const detected = await detectTechs(this.llm, { questionText: reply, userMentioned: allowed });
       usage.push(detected.usage);
       // 응답은 새 가정을 세우지 않으므로 premise도 해답으로 본다.
-      const techs = detected.data.techs.map(
-        (t): TechMention => (t.role === 'premise' ? { ...t, role: 'solution' } : t),
+      const techs = detected.data.techs.map((t): TechMention =>
+        t.role === 'premise' ? { ...t, role: 'solution' } : t,
       );
-      const naming = checkNaming({ techs, userMentioned: allowed, avoid: input.avoidTechs });
+      const naming = checkNaming({
+        techs,
+        userMentioned: withUserTechs(allowed, techs),
+        avoid: input.avoidTechs,
+      });
       leak = !naming.ok;
       if (!leak) break;
       feedback.push(...namingFeedback(naming));

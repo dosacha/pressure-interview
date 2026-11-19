@@ -380,6 +380,59 @@ describe('TurnService.completeQuestion', () => {
   });
 });
 
+describe('TurnService 이름 검사: 흘림 검사가 user로 판정한 이름', () => {
+  const topicOnly: QuestionInput = {
+    ...base,
+    topic: 'PostgreSQL와 Redis 차이',
+    userMentioned: ['PostgreSQL와 Redis 차이', '레디스'],
+  };
+  it('주제 문장에만 있는 기술을 user로 판정하면 다시 만들지 않는다', async () => {
+    const { turn, calls } = await service({
+      question: [d('none', 'PostgreSQL과 Redis는 각각 어디서 먼저 한계에 부딪힐까요?')],
+      leak: [
+        {
+          techs: [
+            { name: 'PostgreSQL', role: 'user' },
+            { name: 'Redis', role: 'user' },
+          ],
+        },
+      ],
+    });
+    const r = await turn.prepareDraft(topicOnly);
+    expect(r.attempts).toHaveLength(1);
+    expect(r.flags.leak).toBe(false);
+    expect(calls).toHaveLength(2);
+  });
+  it('말하지 않은 해답 기술(solution)은 그대로 위반이다', async () => {
+    const { turn } = await service({
+      question: [d('none', 'Kafka는요?'), d('none', '다른 대안은요?')],
+      leak: [
+        {
+          techs: [
+            { name: 'Kafka', role: 'solution' },
+            { name: 'Redis', role: 'user' },
+          ],
+        },
+        { techs: [] },
+      ],
+    });
+    const r = await turn.prepareDraft(topicOnly);
+    expect(r.attempts[0].naming).toEqual({ ok: false, violations: ['Kafka'], avoided: [] });
+  });
+  it('user로 판정돼도 모른다고 한 기술이면 위반이다', async () => {
+    const { turn } = await service({
+      question: [d('none', 'Memcached라면요?'), d('none', '다른 조건이라면요?')],
+      leak: [{ techs: [{ name: 'Memcached', role: 'user' }] }, { techs: [] }],
+    });
+    const r = await turn.prepareDraft({ ...topicOnly, avoidTechs: ['Memcached'] });
+    expect(r.attempts[0].naming).toEqual({
+      ok: false,
+      violations: ['Memcached'],
+      avoided: ['Memcached'],
+    });
+  });
+});
+
 describe('TurnService.replyToClarification', () => {
   const clarify: ClarifyInput = {
     topic: 'Redis',
@@ -399,6 +452,17 @@ describe('TurnService.replyToClarification', () => {
     expect((await turn.replyToClarification(clarify)).leak).toBe(false);
     expect(calls.map((c) => c.kind)).toEqual(['clarify', 'leak']);
     expect(calls[1].user).toContain('Redis, Memcached');
+  });
+  it('되묻기 응답에서도 user로 판정한 이름은 위반이 아니다', async () => {
+    const { turn, calls } = await service({
+      clarify: [{ reply: 'PostgreSQL 쪽만 놓고 답해 주시면 됩니다.' }],
+      leak: [{ techs: [{ name: 'PostgreSQL', role: 'user' }] }],
+    });
+    expect(
+      (await turn.replyToClarification({ ...clarify, userMentioned: ['PostgreSQL와 Redis 차이'] }))
+        .leak,
+    ).toBe(false);
+    expect(calls).toHaveLength(2);
   });
   it('되묻기 응답이 새 기술을 꺼내면 다시 만들고, 끝까지 남으면 leak true', async () => {
     const leaked = { techs: [{ name: 'Kafka', role: 'solution' }] };

@@ -24,6 +24,13 @@ function namingFeedback(naming) {
   return feedback;
 }
 
+// 흘림 검사가 지원자가 말한 기술(role: user)로 판정한 이름은 말한 기술로 친다. 이름 검사는 글자만 맞추므로
+// 주제 문장 안의 이름("PostgreSQL와 Redis 차이"의 Redis)이나 다른 표기("레디스")를 놓친다. 모른다고 한 기술은 avoid가 따로 잡는다.
+const withUserTechs = (mentioned, techs) => [
+  ...mentioned,
+  ...techs.filter((t) => t.role === 'user').map((t) => t.name),
+];
+
 export class TurnService {
   // config에서는 maxRegenerations와 maxConsecutive만 쓴다.
   constructor(llm, config) {
@@ -66,7 +73,7 @@ export class TurnService {
           : techs;
       const naming = checkNaming({
         techs: checked,
-        userMentioned: input.userMentioned,
+        userMentioned: withUserTechs(input.userMentioned, checked),
         avoid: input.avoidTechs,
       });
       premise = naming.ok && premiseResult ? premiseResult.data : null;
@@ -130,7 +137,7 @@ export class TurnService {
       const techs = detected.data.techs.map((t) =>
         t.role === 'premise' ? { ...t, role: 'solution' } : t,
       );
-      const naming = checkNaming({ techs, userMentioned: allowed, avoid: input.avoidTechs });
+      const naming = checkNaming({ techs, userMentioned: withUserTechs(allowed, techs), avoid: input.avoidTechs });
       leak = !naming.ok;
       if (!leak) break;
       feedback.push(...namingFeedback(naming));
